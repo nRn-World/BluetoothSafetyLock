@@ -51,11 +51,11 @@ Personalize the experience with Light, Dark, and Auto themes, and fine-tune the 
 ## ⚖️ License
 
 **nRn World Non-Commercial License**  
-Copyright (c) 2026 nRn World (Robin Ayzit)
+Copyright (c) 2026 nRn World
 
 - **Individuals & Education**: Free for private, non-commercial use.
 - **Commercial Use**: Requires a separate commercial license.
-- **Contact**: bynrnworld@gmail.com | RobinAyzit@gmail.com
+- **Contact**: bynrnworld@gmail.com
 
 ---
 
