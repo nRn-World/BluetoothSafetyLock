@@ -7,7 +7,7 @@ using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using System.Linq;
 
-namespace HardwareAnchor
+namespace BluetoothSafetyLock
 {
     public class BluetoothDeviceModel
     {
@@ -158,17 +158,30 @@ namespace HardwareAnchor
                                    "System.Devices.Aep.ProtocolId:=\"{bb7bb58e-4e49-42f4-88af-48f1ea746d46}\")";
                 string[] requestedProperties = { "System.Devices.Aep.IsPaired", "System.Devices.Aep.IsConnected" };
                 _deviceDiscoveryWatcher = DeviceInformation.CreateWatcher(aqsFilter, requestedProperties, DeviceInformationKind.AssociationEndpoint);
-                _deviceDiscoveryWatcher.Added += (s, di) => { if (!string.IsNullOrEmpty(di.Name)) { DeviceDiscovered?.Invoke(CreateSimpleModel(di, true)); FetchDetailsAsync(di.Id); } };
-                _deviceDiscoveryWatcher.Updated += (s, update) => { FetchDetailsAsync(update.Id); };
+                _deviceDiscoveryWatcher.Added += OnDiscoveryAdded;
+                _deviceDiscoveryWatcher.Updated += OnDiscoveryUpdated;
                 _deviceDiscoveryWatcher.Start();
 
                 Task.Run(async () => {
                     try {
                         var paired = await DeviceInformation.FindAllAsync(aqsFilter, requestedProperties);
-                        foreach (var di in paired) if (!string.IsNullOrEmpty(di.Name)) { DeviceDiscovered?.Invoke(CreateSimpleModel(di, false)); FetchDetailsAsync(di.Id); }
+                        foreach (var di in paired) if (!string.IsNullOrEmpty(di.Name)) { DeviceDiscovered?.Invoke(CreateSimpleModel(di, false)); _ = FetchDetailsAsync(di.Id); }
                     } catch { }
                 });
             } catch { }
+        }
+
+        private void OnDiscoveryAdded(DeviceWatcher s, DeviceInformation di)
+        {
+            if (!string.IsNullOrEmpty(di.Name)) {
+                DeviceDiscovered?.Invoke(CreateSimpleModel(di, true));
+                _ = FetchDetailsAsync(di.Id);
+            }
+        }
+
+        private void OnDiscoveryUpdated(DeviceWatcher s, DeviceInformationUpdate update)
+        {
+            _ = FetchDetailsAsync(update.Id);
         }
 
         private BluetoothDeviceModel CreateSimpleModel(DeviceInformation di, bool nearby)
@@ -186,10 +199,12 @@ namespace HardwareAnchor
             return "Other";
         }
 
-        private async void FetchDetailsAsync(string id)
+        private async Task FetchDetailsAsync(string id)
         {
             try {
                 var di = await DeviceInformation.CreateFromIdAsync(id, new[] { "System.Devices.Aep.Category", "System.Devices.Aep.Bluetooth.BatteryLevel", "{104E0000-B531-4F39-8C00-2053070759E0} 2", "{6196DF38-F020-410E-8F14-88A9620E83F0} 8" });
+                if (di == null) return;
+
                 var model = CreateSimpleModel(di, true);
                 if (di.Properties.TryGetValue("System.Devices.Aep.Category", out var category)) {
                     if (category is string[] cats && cats.Length > 0) model.Category = cats[0].Split('.').Last();
@@ -205,19 +220,20 @@ namespace HardwareAnchor
                     MonitoredBatteryLevel = model.BatteryLevel;
 
                 if (model.BatteryLevel == null) {
-                    var leDevice = await BluetoothLEDevice.FromIdAsync(id);
-                    if (leDevice != null) {
-                        var services = await leDevice.GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Uncached);
-                        if (services.Status == GattCommunicationStatus.Success) {
-                            foreach (var service in services.Services) {
-                                var chars = await service.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.BatteryLevel, BluetoothCacheMode.Uncached);
-                                if (chars.Status == GattCommunicationStatus.Success) {
-                                    var res = await chars.Characteristics[0].ReadValueAsync(BluetoothCacheMode.Uncached);
-                                    if (res.Status == GattCommunicationStatus.Success) {
-                                        model.BatteryLevel = Windows.Storage.Streams.DataReader.FromBuffer(res.Value).ReadByte();
-                                        if (model.Id == _targetDeviceId)
-                                            MonitoredBatteryLevel = model.BatteryLevel;
-                                        DeviceDiscovered?.Invoke(model);
+                    using (var leDevice = await BluetoothLEDevice.FromIdAsync(id)) {
+                        if (leDevice != null) {
+                            var services = await leDevice.GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Uncached);
+                            if (services.Status == GattCommunicationStatus.Success) {
+                                foreach (var service in services.Services) {
+                                    var chars = await service.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.BatteryLevel, BluetoothCacheMode.Uncached);
+                                    if (chars.Status == GattCommunicationStatus.Success && chars.Characteristics.Count > 0) {
+                                        var res = await chars.Characteristics[0].ReadValueAsync(BluetoothCacheMode.Uncached);
+                                        if (res.Status == GattCommunicationStatus.Success) {
+                                            model.BatteryLevel = Windows.Storage.Streams.DataReader.FromBuffer(res.Value).ReadByte();
+                                            if (model.Id == _targetDeviceId)
+                                                MonitoredBatteryLevel = model.BatteryLevel;
+                                            DeviceDiscovered?.Invoke(model);
+                                        }
                                     }
                                 }
                             }
@@ -230,7 +246,11 @@ namespace HardwareAnchor
         public void StopDiscovery()
         {
             if (_deviceDiscoveryWatcher != null) {
-                try { _deviceDiscoveryWatcher.Stop(); } catch { }
+                try {
+                    _deviceDiscoveryWatcher.Added -= OnDiscoveryAdded;
+                    _deviceDiscoveryWatcher.Updated -= OnDiscoveryUpdated;
+                    _deviceDiscoveryWatcher.Stop();
+                } catch { }
                 _deviceDiscoveryWatcher = null;
             }
         }
@@ -287,6 +307,32 @@ namespace HardwareAnchor
             StartConnectionPollTimer();
         }
 
+        private void OnConnectionWatcherAdded(DeviceWatcher s, DeviceInformation di)
+        {
+            _ = Task.Run(async () => {
+                try {
+                    if (!await IsUpdateForTargetDeviceAsync(di.Id)) return;
+                    if (di.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val)) {
+                        bool connected = val is bool b && b;
+                        NotifyConnectionState(connected);
+                    }
+                } catch { }
+            });
+        }
+
+        private void OnConnectionWatcherUpdated(DeviceWatcher s, DeviceInformationUpdate update)
+        {
+            _ = Task.Run(async () => {
+                try {
+                    if (!await IsUpdateForTargetDeviceAsync(update.Id)) return;
+                    if (update.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val)) {
+                        bool connected = val is bool b && b;
+                        NotifyConnectionState(connected);
+                    }
+                } catch { }
+            });
+        }
+
         private void StartConnectionWatcher()
         {
             try {
@@ -297,29 +343,8 @@ namespace HardwareAnchor
                 string[] props = { "System.Devices.Aep.IsConnected" };
                 _connectionWatcher = DeviceInformation.CreateWatcher(aqs, props, DeviceInformationKind.AssociationEndpoint);
 
-                _connectionWatcher.Added += (s, di) => {
-                    _ = Task.Run(async () => {
-                        try {
-                            if (!await IsUpdateForTargetDeviceAsync(di.Id)) return;
-                            if (di.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val)) {
-                                bool connected = val is bool b && b;
-                                NotifyConnectionState(connected);
-                            }
-                        } catch { }
-                    });
-                };
-
-                _connectionWatcher.Updated += (s, update) => {
-                    _ = Task.Run(async () => {
-                        try {
-                            if (!await IsUpdateForTargetDeviceAsync(update.Id)) return;
-                            if (update.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val)) {
-                                bool connected = val is bool b && b;
-                                NotifyConnectionState(connected);
-                            }
-                        } catch { }
-                    });
-                };
+                _connectionWatcher.Added += OnConnectionWatcherAdded;
+                _connectionWatcher.Updated += OnConnectionWatcherUpdated;
 
                 _connectionWatcher.Start();
             } catch {
@@ -416,11 +441,24 @@ namespace HardwareAnchor
             StopConnectionPollTimer();
             DetachConnectionStatusHandlers();
             _targetEndpointIdCache.Clear();
-            if (_monitoredLeDevice != null) { _monitoredLeDevice.Dispose(); _monitoredLeDevice = null; }
-            if (_monitoredClassicDevice != null) { _monitoredClassicDevice.Dispose(); _monitoredClassicDevice = null; }
-            if (_watcher != null) { _watcher.Stop(); _watcher = null; }
+            if (_monitoredLeDevice != null) { 
+                try { _monitoredLeDevice.Dispose(); } catch { }
+                _monitoredLeDevice = null; 
+            }
+            if (_monitoredClassicDevice != null) { 
+                try { _monitoredClassicDevice.Dispose(); } catch { }
+                _monitoredClassicDevice = null; 
+            }
+            if (_watcher != null) { 
+                try { _watcher.Stop(); } catch { }
+                _watcher = null; 
+            }
             if (_connectionWatcher != null) {
-                try { _connectionWatcher.Stop(); } catch { }
+                try {
+                    _connectionWatcher.Added -= OnConnectionWatcherAdded;
+                    _connectionWatcher.Updated -= OnConnectionWatcherUpdated;
+                    _connectionWatcher.Stop(); 
+                } catch { }
                 _connectionWatcher = null;
             }
         }

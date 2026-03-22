@@ -3,7 +3,7 @@ using System.Timers;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 
-namespace HardwareAnchor
+namespace BluetoothSafetyLock
 {
     public class MonitoringService : IDisposable
     {
@@ -214,7 +214,9 @@ namespace HardwareAnchor
         public void Dispose()
         {
             SystemEvents.SessionSwitch -= OnSessionSwitch;
+            _bluetoothManager.RssiUpdated -= OnRssiUpdated;
             CancelPendingLock();
+            _timer.Stop();
             _timer.Dispose();
             _bluetoothManager.Dispose();
         }

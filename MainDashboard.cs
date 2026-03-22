@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace HardwareAnchor
+namespace BluetoothSafetyLock
 {
     public partial class MainDashboard : Form
     {
@@ -20,25 +20,16 @@ namespace HardwareAnchor
         private bool _autoUnlock = true;
         private bool _clearClipboard = true;
         private bool _playWarning = false;
+        private bool _launchAtStartup = true;
         private string _appearanceTheme = "Auto"; // Light, Dark, Auto
+        private Image? _logoImage;
         private int _settingsScrollY = 0;
         private bool _isDraggingSlider = false;
+        private bool _isDraggingWindow = false;
+        private Point _dragStartPoint = Point.Empty;
         private Point _mouseLocation = Point.Empty;
 
-        private bool IsDarkTheme => _appearanceTheme == "Dark" || (_appearanceTheme == "Auto" && IsWindowsInDarkMode());
-
-        private bool IsWindowsInDarkMode()
-        {
-            try {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) {
-                    if (key != null) {
-                        var val = key.GetValue("AppsUseLightTheme");
-                        if (val is int i) return i == 0;
-                    }
-                }
-            } catch { }
-            return true; // Default till mörkt om vi inte kan läsa registret
-        }
+        private bool IsDarkTheme => _appearanceTheme == "Dark" || (_appearanceTheme == "Auto" && NativeMethods.IsWindowsInDarkMode());
 
         private Color BackgroundColor => !IsDarkTheme ? Color.FromArgb(245, 247, 250) : Color.FromArgb(14, 18, 26);
         private Color SidebarColor => !IsDarkTheme ? Color.FromArgb(255, 255, 255) : Color.FromArgb(19, 24, 35);
@@ -53,6 +44,26 @@ namespace HardwareAnchor
             _bluetoothManager = bluetoothManager;
             _monitoringService = monitoringService;
 
+            try {
+                string logoPath = System.IO.Path.Combine(Application.StartupPath, "bluetooth-safetylock-text.png");
+                // Fallback om den ligger i projektmappen under debug
+                if (!System.IO.File.Exists(logoPath))
+                    logoPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bluetooth-safetylock-text.png");
+                // Sista försök: Roten av projektet (där den sannolikt ligger nu)
+                if (!System.IO.File.Exists(logoPath))
+                    logoPath = @"d:\APPS By nRn World\Windows\BluetoothSafetyLock\bluetooth-safetylock-text.png";
+
+                if (System.IO.File.Exists(logoPath))
+                    _logoImage = Image.FromFile(logoPath);
+            } catch { }
+
+            _launchAtStartup = NativeMethods.IsInStartup();
+            if (!_launchAtStartup) 
+            {
+                _launchAtStartup = true;
+                NativeMethods.SetStartup(true);
+            }
+
             this.Text = "Bluetooth SafetyLock";
             this.Size = new Size(1000, 700);
             this.FormBorderStyle = FormBorderStyle.None;
@@ -60,24 +71,9 @@ namespace HardwareAnchor
             this.BackColor = Color.FromArgb(14, 18, 26);
             this.DoubleBuffered = true;
 
-            this.MouseWheel += (s, e) => {
-                if (_activeView == "Settings") {
-                    _settingsScrollY = Math.Clamp(_settingsScrollY - (e.Delta / 2), 0, 300);
-                    this.Invalidate();
-                }
-            };
-
+            this.MouseWheel += OnMainDashboardMouseWheel;
             _bluetoothManager.DeviceDiscovered += OnDeviceDiscovered;
-            _bluetoothManager.StartDiscovery();
-
-            _bluetoothManager.MonitoredBatteryChanged += () => {
-                if (this.InvokeRequired)
-                    this.Invoke(() => { SyncMonitoredBatteryIntoList(); this.Invalidate(); });
-                else {
-                    SyncMonitoredBatteryIntoList();
-                    this.Invalidate();
-                }
-            };
+            _bluetoothManager.MonitoredBatteryChanged += OnMonitoredBatteryChanged;
 
             _refreshTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             _refreshTimer.Tick += (s, e) => {
@@ -86,24 +82,79 @@ namespace HardwareAnchor
             };
             _refreshTimer.Start();
 
-            this.MouseDown += (s, e) => {
-                if (_activeView == "Settings") {
-                    _isDraggingSlider = true;
-                    HandleSliderDrag(e);
-                }
-            };
-            this.MouseMove += (s, e) => {
-                _mouseLocation = e.Location;
-                if (_activeView == "Settings" && _isDraggingSlider && e.Button == MouseButtons.Left) {
-                    HandleSliderDrag(e);
-                }
-                if (_activeView == "System Status") {
-                    this.Invalidate(); // För hover-effekt i grafen
-                }
-            };
-            this.MouseUp += (s, e) => {
-                _isDraggingSlider = false;
-            };
+            this.MouseDown += OnMainDashboardMouseDown;
+            this.MouseMove += OnMainDashboardMouseMove;
+            this.MouseUp += OnMainDashboardMouseUp;
+        }
+
+        private void OnMainDashboardMouseWheel(object? sender, MouseEventArgs e)
+        {
+            if (_activeView == "Settings") {
+                _settingsScrollY = Math.Clamp(_settingsScrollY - (e.Delta / 2), 0, 300);
+                this.Invalidate();
+            }
+        }
+
+        private void OnMonitoredBatteryChanged()
+        {
+            if (this.InvokeRequired)
+                this.Invoke(() => { SyncMonitoredBatteryIntoList(); this.Invalidate(); });
+            else {
+                SyncMonitoredBatteryIntoList();
+                this.Invalidate();
+            }
+        }
+
+        private void OnMainDashboardMouseDown(object? sender, MouseEventArgs e)
+        {
+            if (_activeView == "Settings") {
+                _isDraggingSlider = true;
+                HandleSliderDrag(e);
+            }
+
+            // Flytta fönster om man klickar i sidebaren eller högst upp
+            if (e.Button == MouseButtons.Left && (e.X < 260 || e.Y < 40))
+            {
+                _isDraggingWindow = true;
+                _dragStartPoint = new Point(e.X, e.Y);
+            }
+        }
+
+        private void OnMainDashboardMouseMove(object? sender, MouseEventArgs e)
+        {
+            _mouseLocation = e.Location;
+            if (_activeView == "Settings" && _isDraggingSlider && e.Button == MouseButtons.Left) {
+                HandleSliderDrag(e);
+            }
+
+            if (_isDraggingWindow)
+            {
+                Point screenPoint = this.PointToScreen(e.Location);
+                this.Location = new Point(screenPoint.X - _dragStartPoint.X, screenPoint.Y - _dragStartPoint.Y);
+            }
+
+            if (_activeView == "System Status") {
+                this.Invalidate(); // För hover-effekt i grafen
+            }
+        }
+
+        private void OnMainDashboardMouseUp(object? sender, MouseEventArgs e)
+        {
+            _isDraggingSlider = false;
+            _isDraggingWindow = false;
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _refreshTimer.Stop();
+            _refreshTimer.Dispose();
+            _bluetoothManager.DeviceDiscovered -= OnDeviceDiscovered;
+            _bluetoothManager.MonitoredBatteryChanged -= OnMonitoredBatteryChanged;
+            this.MouseWheel -= OnMainDashboardMouseWheel;
+            this.MouseDown -= OnMainDashboardMouseDown;
+            this.MouseMove -= OnMainDashboardMouseMove;
+            this.MouseUp -= OnMainDashboardMouseUp;
+            base.OnClosed(e);
         }
 
         private void HandleSliderDrag(MouseEventArgs e)
@@ -220,16 +271,34 @@ namespace HardwareAnchor
                 return;
             }
 
+            // Fönsterknappar (Kryss och Minimera)
+            int btnX = this.Width - 45;
+            int btnY = 10;
+            if (new Rectangle(btnX, btnY, 35, 30).Contains(e.Location))
+            {
+                this.Hide();
+                return;
+            }
+            btnX -= 40;
+            if (new Rectangle(btnX, btnY, 35, 30).Contains(e.Location))
+            {
+                this.WindowState = FormWindowState.Minimized;
+                return;
+            }
+
             if (_activeView == "Security Actions") {
                 if (new Rectangle(860, 255, 60, 30).Contains(e.Location)) _lockWorkstation = !_lockWorkstation;
                 if (new Rectangle(860, 345, 60, 30).Contains(e.Location)) _autoUnlock = !_autoUnlock;
                 if (new Rectangle(860, 435, 60, 30).Contains(e.Location)) _clearClipboard = !_clearClipboard;
                 if (new Rectangle(860, 525, 60, 30).Contains(e.Location)) _playWarning = !_playWarning;
+                if (new Rectangle(860, 615, 60, 30).Contains(e.Location)) {
+                    _launchAtStartup = !_launchAtStartup;
+                    NativeMethods.SetStartup(_launchAtStartup);
+                }
                 this.Invalidate();
                 return;
             }
 
-            if (new Rectangle(960, 5, 30, 30).Contains(e.Location)) this.Hide();
             if (_activeView == "Devices" && new Rectangle(810, 95, 130, 40).Contains(e.Location)) {
                 var selector = new DeviceSelectorForm(_bluetoothManager, _monitoringService);
                 selector.ShowDialog();
@@ -267,12 +336,62 @@ namespace HardwareAnchor
             
             this.BackColor = BackgroundColor;
 
+            // Rita fönsterknappar (Kryss och Minimera)
+            int btnX = this.Width - 45;
+            int btnY = 10;
+            
+            // Stäng (Kryss)
+            bool hoverClose = new Rectangle(btnX, btnY, 35, 30).Contains(_mouseLocation);
+            if (hoverClose) FillRoundedRect(g, Color.FromArgb(232, 17, 35), new Rectangle(btnX, btnY, 35, 30), 4);
+            using (var p = new Pen(hoverClose ? Color.White : SecondaryTextColor, 1.5f)) {
+                g.DrawLine(p, btnX + 11, btnY + 9, btnX + 24, btnY + 21);
+                g.DrawLine(p, btnX + 24, btnY + 9, btnX + 11, btnY + 21);
+            }
+
+            // Minimera
+            btnX -= 40;
+            bool hoverMin = new Rectangle(btnX, btnY, 35, 30).Contains(_mouseLocation);
+            if (hoverMin) FillRoundedRect(g, CardInnerColor, new Rectangle(btnX, btnY, 35, 30), 4);
+            using (var p = new Pen(SecondaryTextColor, 1.5f)) {
+                g.DrawLine(p, btnX + 11, btnY + 15, btnX + 24, btnY + 15);
+            }
+
             var sidebarRect = new Rectangle(0, 0, 260, this.Height);
             using (var sbBrush = new SolidBrush(SidebarColor)) g.FillRectangle(sbBrush, sidebarRect);
 
-            g.FillEllipse(new LinearGradientBrush(new Rectangle(40, 60, 48, 48), Color.DodgerBlue, Color.DeepSkyBlue, 45), 40, 60, 48, 48);
-            using (var secondaryBrush = new SolidBrush(SecondaryTextColor)) g.DrawString("Bluetooth", new Font("Segoe UI", 9), secondaryBrush, 100, 70);
-            using (var primaryBrush = new SolidBrush(PrimaryTextColor)) g.DrawString("SafetyLock", new Font("Segoe UI", 16, FontStyle.Bold), primaryBrush, 100, 85);
+            // Rita Logga och Branding (enligt bild)
+            int logoX = 30;
+            int logoY = 50;
+            int logoSize = 64;
+
+            if (_logoImage != null)
+            {
+                // Om loggan finns, rita bara den (den innehåller redan texten enligt bilden)
+                // Vi ritar den med bibehållen aspekt-ratio om möjligt, annars som en bredare rektangel
+                float aspectRatio = (float)_logoImage.Width / _logoImage.Height;
+                int drawWidth = (int)(logoSize * aspectRatio);
+                g.DrawImage(_logoImage, new Rectangle(logoX, logoY, drawWidth, logoSize));
+            }
+            else
+            {
+                // Fallback: Rita ikonen och texten manuellt om bildfilen saknas
+                FillRoundedRect(g, Color.FromArgb(40, 50, 80), new Rectangle(logoX, logoY, logoSize, logoSize), 12);
+                
+                int textX = logoX + logoSize + 12;
+                using (var blueBrush = new SolidBrush(Color.DodgerBlue))
+                {
+                    g.DrawString("BLUETOOTH", new Font("Segoe UI", 8, FontStyle.Bold), blueBrush, textX, logoY + 8);
+                    
+                    using (var whiteBrush = new SolidBrush(Color.White))
+                    {
+                        var safetyFont = new Font("Segoe UI", 18, FontStyle.Bold);
+                        g.DrawString("Safety", safetyFont, whiteBrush, textX - 3, logoY + 20);
+                        
+                        float safetyWidth = g.MeasureString("Safety", safetyFont).Width;
+                        g.DrawString("Lock", safetyFont, blueBrush, textX + safetyWidth - 15, logoY + 20);
+                    }
+                }
+            }
 
             string[] sidebarItems = { "System Status", "Devices", "Security Actions", "Settings" };
             int menuY = 180;
@@ -288,6 +407,12 @@ namespace HardwareAnchor
             bool isPaused = _monitoringService.IsPaused;
             FillRoundedRect(g, isPaused ? Color.FromArgb(25, 45, 30) : Color.FromArgb(45, 25, 30), stopRect, 8);
             g.DrawString(isPaused ? "⏵ Start Service" : "⏸ Stop Service", new Font("Segoe UI", 11, FontStyle.Bold), new SolidBrush(isPaused ? Color.MediumSpringGreen : Color.IndianRed), 65, this.Height - 65);
+
+            // Rita copyright-text under knappen
+            using (var copyrightBrush = new SolidBrush(Color.FromArgb(100, SecondaryTextColor)))
+            {
+                g.DrawString("Created 2026 by © nRn World", new Font("Segoe UI", 8), copyrightBrush, 45, this.Height - 30);
+            }
 
             if (_activeView == "Settings")
             {
@@ -463,10 +588,10 @@ namespace HardwareAnchor
         private void DrawSecurityPage(Graphics g)
         {
             g.DrawString("Security Actions", new Font("Segoe UI", 24, FontStyle.Bold), Brushes.White, 300, 80);
-            var listRect = new Rectangle(300, 220, 640, 400);
+            var listRect = new Rectangle(300, 220, 640, 430);
             FillRoundedRect(g, Color.FromArgb(26, 35, 51), listRect, 12);
-            string[] actions = { "Lock Workstation", "Auto-Unlock (Wake on Approach)", "Clear Clipboard", "Play Warning Sound" };
-            bool[] states = { _lockWorkstation, _autoUnlock, _clearClipboard, _playWarning };
+            string[] actions = { "Lock Workstation", "Auto-Unlock (Wake on Approach)", "Clear Clipboard", "Play Warning Sound", "Launch at Startup" };
+            bool[] states = { _lockWorkstation, _autoUnlock, _clearClipboard, _playWarning, _launchAtStartup };
             int actY = 250;
             for (int i = 0; i < actions.Length; i++) {
                 g.DrawString(actions[i], new Font("Segoe UI", 11, FontStyle.Bold), Brushes.White, 380, actY);

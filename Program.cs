@@ -1,4 +1,4 @@
-namespace HardwareAnchor;
+namespace BluetoothSafetyLock;
 
 internal static class Program
 {

@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace HardwareAnchor
+namespace BluetoothSafetyLock
 {
     public static partial class NativeMethods
     {
@@ -36,6 +36,52 @@ namespace HardwareAnchor
                 EmptyClipboard();
                 CloseClipboard();
             }
+        }
+
+        public static bool IsWindowsInDarkMode()
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    if (key != null)
+                    {
+                        var val = key.GetValue("AppsUseLightTheme");
+                        if (val is int i) return i == 0;
+                    }
+                }
+            }
+            catch { }
+            return true; // Default to dark if we can't read registry
+        }
+
+        public static bool IsInStartup()
+        {
+            try {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", false)) {
+                    if (key != null) {
+                        var val = key.GetValue("BluetoothSafetyLock");
+                        return val != null;
+                    }
+                }
+            } catch { }
+            return false;
+        }
+
+        public static void SetStartup(bool enable)
+        {
+            try {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
+                    if (key != null) {
+                        if (enable) {
+                            string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+                            key.SetValue("BluetoothSafetyLock", $"\"{exePath}\"");
+                        } else {
+                            key.DeleteValue("BluetoothSafetyLock", false);
+                        }
+                    }
+                }
+            } catch { }
         }
     }
 }
