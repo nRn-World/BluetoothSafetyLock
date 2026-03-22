@@ -1,0 +1,18 @@
+# .gitignore for BluetoothSafetyLock
+
+# Build results
+bin/
+obj/
+
+# Visual Studio user files
+*.csproj.user
+
+# Debug logs
+*.log
+build_output.txt
+
+# IDE files
+.cursor/
+.vs/
+.idea/
+.vscode/
