@@ -40,11 +40,12 @@ Personalize the experience with Light, Dark, and Auto themes, and fine-tune the 
 
 ## 🛠️ Installation & Usage
 
-1. **Download**: Clone the repository or download the latest release.
-2. **Run**: Launch `BluetoothSafetyLock.exe`.
-3. **Pair**: Go to the "Devices" tab, click "+ Add Device", and select your device.
-4. **Configure**: Set your desired threshold and grace period in the "Settings" tab.
-5. **Protect**: Ensure the service is started, and you're good to go!
+1. **Download**: Go to the [Releases](https://github.com/nRn-World/BluetoothSafetyLock/releases) page and download the latest `BluetoothSafetyLock-v1.0.zip`.
+2. **Extract**: Unzip the folder to a location of your choice on your computer.
+3. **Run**: Launch `BluetoothSafetyLock.exe`. It's a self-contained app, so no installation is required!
+4. **Pair**: Open the app, go to the "Devices" tab, click "+ Add Device", and select your Bluetooth device.
+5. **Configure**: Fine-tune your "Lock Threshold" and "Grace Period" in the "Settings" tab to fit your needs.
+6. **Protect**: Ensure the service is started (click "Start Service" in the sidebar). Your PC is now secured!
 
 ---
 
