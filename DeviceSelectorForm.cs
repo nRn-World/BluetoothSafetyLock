@@ -33,7 +33,7 @@ namespace BluetoothSafetyLock
 
         private void InitializeForm()
         {
-            this.Text = "BluetoothSafetyLock - Inställningar";
+            this.Text = "BluetoothSafetyLock - Settings";
             this.Size = new Size(420, 600);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -41,7 +41,7 @@ namespace BluetoothSafetyLock
             this.BackColor = Color.FromArgb(28, 28, 28);
             this.ForeColor = Color.White;
 
-            var titleLabel = new Label { Text = "Bluetooth Enhetssökning", Font = new Font("Segoe UI", 12, FontStyle.Bold), Location = new Point(20, 20), AutoSize = true };
+            var titleLabel = new Label { Text = "Bluetooth Device Discovery", Font = new Font("Segoe UI", 12, FontStyle.Bold), Location = new Point(20, 20), AutoSize = true };
             _deviceList = new ListBox
             {
                 Location = new Point(20, 55),
@@ -53,18 +53,18 @@ namespace BluetoothSafetyLock
                 ItemHeight = 25
             };
 
-            var scanButton = new Button { Text = "🔄 Uppdatera sökning", Location = new Point(20, 290), Size = new Size(160, 30), FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(60, 60, 60), Font = new Font("Segoe UI", 9) };
+            var scanButton = new Button { Text = "🔄 Refresh scan", Location = new Point(20, 290), Size = new Size(160, 30), FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(60, 60, 60), Font = new Font("Segoe UI", 9) };
             scanButton.Click += (s, e) => StartScanning();
 
-            var sensitivityLabel = new Label { Text = "Låskänslighet (Tröskelvärde)", Font = new Font("Segoe UI", 10, FontStyle.Bold), Location = new Point(20, 335), AutoSize = true };
+            var sensitivityLabel = new Label { Text = "Lock Sensitivity (Threshold)", Font = new Font("Segoe UI", 10, FontStyle.Bold), Location = new Point(20, 335), AutoSize = true };
             _thresholdBar = new TrackBar { Location = new Point(20, 365), Size = new Size(280, 45), Minimum = -100, Maximum = -30, Value = _monitoringService.Threshold, TickFrequency = 5 };
             _thresholdBar.ValueChanged += (s, e) => UpdateThresholdLabel();
             _thresholdLabel = new Label { Location = new Point(310, 370), Size = new Size(80, 25), Text = _monitoringService.Threshold + " dBm", Font = new Font("Segoe UI", 10) };
 
-            var graceLabel = new Label { Text = "Vänteperiod (Sekunder)", Font = new Font("Segoe UI", 10, FontStyle.Bold), Location = new Point(20, 420), AutoSize = true };
+            var graceLabel = new Label { Text = "Grace Period (Seconds)", Font = new Font("Segoe UI", 10, FontStyle.Bold), Location = new Point(20, 420), AutoSize = true };
             var graceNumeric = new NumericUpDown { Location = new Point(20, 450), Size = new Size(80, 30), Value = _monitoringService.GracePeriodSeconds, BackColor = Color.FromArgb(45, 45, 45), ForeColor = Color.White, Minimum = 1, Maximum = 60, Font = new Font("Segoe UI", 10) };
 
-            _saveButton = new Button { Text = "Välj & Starta Skydd", Location = new Point(20, 500), Size = new Size(365, 50), FlatStyle = FlatStyle.Flat, BackColor = Color.DodgerBlue, ForeColor = Color.White, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
+            _saveButton = new Button { Text = "Select & Start Protection", Location = new Point(20, 500), Size = new Size(365, 50), FlatStyle = FlatStyle.Flat, BackColor = Color.DodgerBlue, ForeColor = Color.White, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
             _saveButton.Click += async (s, e) => {
                 if (_deviceList.SelectedIndex >= 0)
                 {
@@ -77,22 +77,22 @@ namespace BluetoothSafetyLock
                         bool paired = await _bluetoothManager.PairDeviceAsync(selectedDevice.Id);
                         if (!paired)
                         {
-                            MessageBox.Show("Parning misslyckades. Kontrollera att enheten är i parningsläge.");
+                            MessageBox.Show("Pairing failed. Please ensure the device is in pairing mode.");
                             _saveButton.Enabled = true;
                             return;
                         }
                     }
 
-                    _saveButton.Text = "Startar...";
+                    _saveButton.Text = "Starting...";
                     _monitoringService.Threshold = (short)_thresholdBar.Value;
                     _monitoringService.GracePeriodSeconds = (int)graceNumeric.Value;
                     _monitoringService.MonitoredDeviceName = selectedDevice.Name;
                     await _monitoringService.StartMonitoringAsync(selectedDevice.Id);
                     
-                    MessageBox.Show($"Övervakning startad för '{selectedDevice.Name}'.", "BluetoothSafetyLock Aktiv", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show($"Monitoring started for '{selectedDevice.Name}'.", "BluetoothSafetyLock Active", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     this.Close();
                 }
-                else MessageBox.Show("Välj en enhet.");
+                else MessageBox.Show("Please select a device.");
             };
 
             this.Controls.AddRange(new Control[] { titleLabel, _deviceList, scanButton, sensitivityLabel, _thresholdBar, _thresholdLabel, graceLabel, graceNumeric, _saveButton });

@@ -72,7 +72,7 @@ namespace BluetoothSafetyLock
         private System.Timers.Timer? _lockDelayTimer;
         private bool _pendingLock = false;
         private int _violationStrikes = 0;
-        private const int MaxViolationStrikes = 2; // Sänk till 2 för snabbare respons vid tystnad
+        private const int MaxViolationStrikes = 2; // Lower to 2 for faster response on silence
 
         private void CancelPendingLock()
         {
@@ -83,7 +83,7 @@ namespace BluetoothSafetyLock
             _lockDelayTimer = null;
         }
 
-        /// <param name="fromWindowsDisconnect">Sant när Windows rapporterar frånkoppling (-128); kort fördröjning.</param>
+        /// <param name="fromWindowsDisconnect">True when Windows reports disconnect (-128); short delay.</param>
         private void ScheduleDisconnectLock(bool fromWindowsDisconnect)
         {
             if (IsPaused || _isLocked || !_hasConfirmedConnection) return;
@@ -91,8 +91,8 @@ namespace BluetoothSafetyLock
             if (!fromWindowsDisconnect && (DateTime.Now - _monitoringStartTime).TotalSeconds < MinMonitoringSecondsBeforeSilenceLock) return;
             if (_pendingLock) return;
 
-            // Kräv flera "strikes" vid signalförlust för att undvika slumpmässiga lås.
-            // Vid Windows explicit frånkoppling låser vi direkt (strike 3).
+            // Require multiple "strikes" on signal loss to avoid accidental locks.
+            // On explicit Windows disconnect, we lock immediately (strike 3).
             if (!fromWindowsDisconnect)
             {
                 _violationStrikes++;
@@ -123,7 +123,7 @@ namespace BluetoothSafetyLock
                 return;
             }
 
-            // Återställ strikes vid varje lyckad signaluppdatering
+            // Reset strikes on every successful signal update
             if (rssi > Threshold || rssi == ConnectionWatcherConnected)
             {
                 _violationStrikes = 0;
@@ -144,7 +144,7 @@ namespace BluetoothSafetyLock
                 if (_realRssiSamples >= RealRssiSamplesRequired)
                     _hasConfirmedConnection = true;
                 
-                // Om signalen är under tröskelvärdet, räkna som strike
+                // If signal is below threshold, count as strike
                 if (rssi < Threshold)
                 {
                     ScheduleDisconnectLock(fromWindowsDisconnect: false);
@@ -158,7 +158,7 @@ namespace BluetoothSafetyLock
                 _isLocked = false;
                 _monitoringStartTime = DateTime.Now;
                 NativeMethods.WakeScreen();
-                StatusChanged?.Invoke("Välkommen tillbaka!");
+                StatusChanged?.Invoke("Welcome back!");
             }
         }
 
@@ -166,19 +166,19 @@ namespace BluetoothSafetyLock
         {
             if (IsPaused || _isLocked || !_hasConfirmedConnection) return;
             
-            // Om vi precis startat (inom 10s), lås aldrig.
+            // If we just started (within 10s), never lock.
             if ((DateTime.Now - _monitoringStartTime).TotalSeconds < MinSecondsBeforeAnyLock) return;
 
-            // Om Windows säger att vi är anslutna, lita på det – men bara om vi också 
-            // sett en signal nyligen (inom 5s). Windows kan vara segt på att upptäcka 
-            // att en BLE-enhet stängts av.
+            // If Windows says we're connected, trust it – but only if we've also 
+            // seen a signal recently (within 5s). Windows can be slow to detect 
+            // that a BLE device has been turned off.
             if (_bluetoothManager.IsDeviceConnected && (DateTime.Now - LastUpdateReceived).TotalSeconds < 5.0)
             {
                 LastUpdateReceived = DateTime.Now;
                 return;
             }
             
-            // Om vi inte hört något på 10 sekunder (AdvertisementSilenceSeconds), lås.
+            // If we haven't heard anything for 5 seconds (AdvertisementSilenceSeconds), lock.
             if ((DateTime.Now - LastUpdateReceived).TotalSeconds < AdvertisementSilenceSeconds) return;
             
             ScheduleDisconnectLock(fromWindowsDisconnect: false);

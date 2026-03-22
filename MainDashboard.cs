@@ -46,10 +46,10 @@ namespace BluetoothSafetyLock
 
             try {
                 string logoPath = System.IO.Path.Combine(Application.StartupPath, "bluetooth-safetylock-text.png");
-                // Fallback om den ligger i projektmappen under debug
+                // Fallback if in project folder under debug
                 if (!System.IO.File.Exists(logoPath))
                     logoPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bluetooth-safetylock-text.png");
-                // Sista försök: Roten av projektet (där den sannolikt ligger nu)
+                // Final attempt: Project root
                 if (!System.IO.File.Exists(logoPath))
                     logoPath = @"d:\APPS By nRn World\Windows\BluetoothSafetyLock\bluetooth-safetylock-text.png";
 
@@ -247,9 +247,9 @@ namespace BluetoothSafetyLock
                 int curY = e.Y + _settingsScrollY;
 
                 // Appearance Buttons (Y: 290)
-                if (new Rectangle(330, 290, 200, 60).Contains(e.X, curY)) _appearanceTheme = "Light";
-                if (new Rectangle(530, 290, 200, 60).Contains(e.X, curY)) _appearanceTheme = "Dark";
-                if (new Rectangle(730, 290, 200, 60).Contains(e.X, curY)) _appearanceTheme = "Auto";
+                if (new Rectangle(330, 290, 200, 50).Contains(e.X, curY)) _appearanceTheme = "Light";
+                if (new Rectangle(530, 290, 200, 50).Contains(e.X, curY)) _appearanceTheme = "Dark";
+                if (new Rectangle(730, 290, 200, 50).Contains(e.X, curY)) _appearanceTheme = "Auto";
 
                 // Threshold Slider (Y: 550)
                 var thresholdRect = new Rectangle(330, 540, 580, 40);
@@ -408,7 +408,7 @@ namespace BluetoothSafetyLock
             FillRoundedRect(g, isPaused ? Color.FromArgb(25, 45, 30) : Color.FromArgb(45, 25, 30), stopRect, 8);
             g.DrawString(isPaused ? "⏵ Start Service" : "⏸ Stop Service", new Font("Segoe UI", 11, FontStyle.Bold), new SolidBrush(isPaused ? Color.MediumSpringGreen : Color.IndianRed), 65, this.Height - 65);
 
-            // Rita copyright-text under knappen
+            // Draw copyright text under button
             using (var copyrightBrush = new SolidBrush(Color.FromArgb(100, SecondaryTextColor)))
             {
                 g.DrawString("Created 2026 by © nRn World", new Font("Segoe UI", 8), copyrightBrush, 45, this.Height - 30);
@@ -462,7 +462,7 @@ namespace BluetoothSafetyLock
                 g.DrawString(isActive ? "Monitoring Active" : "Monitoring Paused", new Font("Segoe UI", 14, FontStyle.Bold), primaryBrush, 395, 195);
                 g.DrawString($"Tracking \"{_monitoringService.MonitoredDeviceName}\"", new Font("Segoe UI", 10), secondaryBrush, 395, 225);
                 
-                // Visa positivt värde (t.ex. 88 istället för -88)
+                // Show positive value (e.g. 88 instead of -88)
                 string rssiVal = _monitoringService.CurrentRssi > -110 ? Math.Abs(_monitoringService.CurrentRssi).ToString() : "—";
                 g.DrawString(rssiVal, new Font("Segoe UI", 28, FontStyle.Bold), primaryBrush, 780, 185);
                 g.DrawString("dBm", new Font("Segoe UI", 10, FontStyle.Bold), secondaryBrush, 885, 202);
@@ -481,7 +481,7 @@ namespace BluetoothSafetyLock
             using (var thresholdPen = new Pen(Color.FromArgb(150, 255, 60, 60), 1))
             {
                 thresholdPen.DashStyle = DashStyle.Dash;
-                // Vänd logiken: Stark signal (-40) är högst upp (0), svag (-110) är längst ner (height)
+                // Flip logic: Strong signal (-40) is top (0), weak (-110) is bottom (height)
                 float normalizedThreshold = (_monitoringService.Threshold + 110) / 70f;
                 int thresholdY = graphRect.Bottom - (int)(normalizedThreshold * graphRect.Height);
                 g.DrawLine(thresholdPen, graphRect.Left, thresholdY, graphRect.Right, thresholdY);
@@ -502,7 +502,7 @@ namespace BluetoothSafetyLock
                         for (int i = 0; i < _signalHistory.Count; i++)
                         {
                             float x = graphRect.Left + i * xStep;
-                            // Skala: 0% vid -110 dBm, 100% vid -40 dBm
+                            // Scale: 0% at -110 dBm, 100% at -40 dBm
                             float strengthPct = Math.Clamp((_signalHistory[i] + 110) / 70f, 0, 1);
                             float y = graphRect.Bottom - (strengthPct * graphRect.Height);
                             points.Add(new PointF(x, y));
@@ -536,40 +536,70 @@ namespace BluetoothSafetyLock
 
         private void DrawDevicesPage(Graphics g)
         {
-            g.DrawString("Devices", new Font("Segoe UI", 24, FontStyle.Bold), Brushes.White, 300, 80);
-            var addBtnRect = new Rectangle(810, 95, 130, 40);
-            FillRoundedRect(g, Color.DodgerBlue, addBtnRect, 10);
-            g.DrawString("+ Add Device", new Font("Segoe UI", 11, FontStyle.Bold), Brushes.White, 830, 105);
+            using (var primaryBrush = new SolidBrush(PrimaryTextColor))
+            using (var secondaryBrush = new SolidBrush(SecondaryTextColor))
+            {
+                g.DrawString("Devices", new Font("Segoe UI", 24, FontStyle.Bold), primaryBrush, 300, 60);
+                g.DrawString("Manage and select paired Bluetooth devices to monitor.", new Font("Segoe UI", 11), secondaryBrush, 300, 110);
 
-            int devY = 200;
-            foreach (var dev in _pairedDevices) {
-                var devRect = new Rectangle(300, devY, 640, 100);
-                FillRoundedRect(g, Color.FromArgb(26, 35, 51), devRect, 12);
-                
-                g.DrawEllipse(new Pen(Color.DodgerBlue, 2), 330, devY + 35, 32, 32);
-                g.DrawString(dev.Name, new Font("Segoe UI", 13, FontStyle.Bold), Brushes.White, 380, devY + 25);
-                
-                int currentX = 380;
-                g.DrawString(dev.Category, new Font("Segoe UI", 10), Brushes.Gray, currentX, devY + 55);
-                currentX += (int)g.MeasureString(dev.Category + " ", new Font("Segoe UI", 10)).Width;
+                var addBtnRect = new Rectangle(770, 95, 170, 45);
+                FillRoundedRect(g, Color.FromArgb(28, 100, 242), addBtnRect, 10);
+                g.DrawString("+ Add Device", new Font("Segoe UI", 11, FontStyle.Bold), Brushes.White, 810, 106);
 
-                g.FillEllipse(Brushes.DimGray, currentX + 5, devY + 63, 4, 4);
-                currentX += 15;
+                var containerRect = new Rectangle(300, 180, 640, 450);
+                FillRoundedRect(g, Color.FromArgb(26, 35, 51), containerRect, 16);
 
-                byte? batPct = dev.BatteryLevel;
-                if (dev.Id == _bluetoothManager.MonitoredDeviceId && _bluetoothManager.MonitoredBatteryLevel.HasValue)
-                    batPct = _bluetoothManager.MonitoredBatteryLevel;
+                int devY = 180;
+                int itemHeight = 110;
+                for (int i = 0; i < _pairedDevices.Count; i++)
+                {
+                    var dev = _pairedDevices[i];
+                    bool isSelected = dev.Id == _bluetoothManager.MonitoredDeviceId;
+                    var itemRect = new Rectangle(300, devY, 640, itemHeight);
 
-                if (batPct.HasValue) {
-                    DrawBatteryIcon(g, currentX, devY + 58, batPct.Value);
-                    currentX += 30;
-                    g.DrawString($"{batPct.Value}%", new Font("Segoe UI", 10, FontStyle.Bold), Brushes.LightGray, currentX, devY + 55);
-                } else {
-                    g.DrawString("—", new Font("Segoe UI", 10, FontStyle.Italic), Brushes.DimGray, currentX, devY + 55);
+                    // Selection highlight for top item
+                    if (isSelected) {
+                        using (var selBrush = new SolidBrush(Color.FromArgb(40, 60, 100)))
+                            FillRoundedRect(g, selBrush.Color, itemRect, i == 0 ? 16 : 0);
+                    }
+
+                    // Radio button
+                    using (var p = new Pen(isSelected ? Color.FromArgb(28, 100, 242) : Color.White, 3)) {
+                        g.DrawEllipse(p, 330, devY + 38, 22, 22);
+                        if (isSelected) {
+                            using (var b = new SolidBrush(Color.FromArgb(28, 100, 242)))
+                                g.FillEllipse(b, 335, devY + 43, 12, 12);
+                        }
+                    }
+
+                    // Device Info
+                    g.DrawString(dev.Name, new Font("Segoe UI", 12, FontStyle.Bold), isSelected ? new SolidBrush(Color.FromArgb(100, 160, 255)) : primaryBrush, 370, devY + 28);
+                    
+                    int subY = devY + 58;
+                    g.DrawString(dev.Category, new Font("Segoe UI", 10), secondaryBrush, 370, subY);
+                    
+                    float catWidth = g.MeasureString(dev.Category + " ", new Font("Segoe UI", 10)).Width;
+                    g.FillEllipse(new SolidBrush(Color.FromArgb(100, 100, 100)), 375 + catWidth, subY + 8, 4, 4);
+
+                    byte? batPct = dev.BatteryLevel;
+                    if (isSelected && _bluetoothManager.MonitoredBatteryLevel.HasValue)
+                        batPct = _bluetoothManager.MonitoredBatteryLevel;
+
+                    if (batPct.HasValue) {
+                        DrawBatteryIcon(g, (int)(395 + catWidth), subY + 2, batPct.Value);
+                        Color batColor = batPct <= 20 ? Color.FromArgb(255, 80, 80) : (batPct >= 90 ? Color.FromArgb(80, 255, 150) : Color.FromArgb(100, 180, 255));
+                        g.DrawString($"{batPct.Value}%", new Font("Segoe UI", 10, FontStyle.Bold), new SolidBrush(batColor), 425 + catWidth, subY);
+                    }
+
+                    // Delete Icon
+                    g.DrawString("🗑", new Font("Segoe UI", 14), new SolidBrush(Color.FromArgb(80, 80, 90)), 900, devY + 38);
+
+                    // Separator
+                    if (i < _pairedDevices.Count - 1)
+                        g.DrawLine(new Pen(Color.FromArgb(40, 50, 70), 1), 300, devY + itemHeight, 940, devY + itemHeight);
+
+                    devY += itemHeight;
                 }
-
-                g.DrawString("🗑", new Font("Segoe UI", 16), Brushes.DimGray, 900, devY + 35);
-                devY += 115;
             }
         }
 
@@ -614,26 +644,57 @@ namespace BluetoothSafetyLock
                 g.DrawString("Appearance", new Font("Segoe UI", 13, FontStyle.Bold), primaryBrush, 330, 195);
                 g.DrawString("Choose your preferred theme or sync with Windows.", new Font("Segoe UI", 10), secondaryBrush, 330, 235);
 
-                // Theme Buttons Area
-                var themeBarRect = new Rectangle(330, 290, 580, 60);
-                FillRoundedRect(g, CardInnerColor, themeBarRect, 8);
+                // Theme Buttons Area (Segmented Control Style)
+                var themeBarRect = new Rectangle(330, 290, 600, 50);
+                FillRoundedRect(g, Color.FromArgb(20, 26, 38), themeBarRect, 10); // Dark base bar
 
                 string[] themes = { "Light", "Dark", "Auto" };
-                int themeX = 330;
-                foreach (var t in themes)
+                int themeBtnWidth = 200;
+                for (int i = 0; i < themes.Length; i++)
                 {
+                    string t = themes[i];
                     bool isSel = _appearanceTheme == t;
-                    var btnRect = new Rectangle(themeX, 290, t == "Auto" ? 180 : 200, 60);
-                    if (t == "Auto") btnRect.X = 730;
+                    int x = 330 + (i * themeBtnWidth);
+                    var btnRect = new Rectangle(x, 290, themeBtnWidth, 50);
 
-                    if (isSel) FillRoundedRect(g, SidebarActiveColor, btnRect, 8);
+                    if (isSel) {
+                        // Selected button has a slightly smaller, rounded background for a "tab" effect
+                        var selRect = new Rectangle(x + 4, 294, themeBtnWidth - 8, 42);
+                        FillRoundedRect(g, Color.FromArgb(45, 55, 75), selRect, 8);
+                        using (var p = new Pen(Color.FromArgb(30, 255, 255, 255), 1))
+                            g.DrawPath(p, GetRoundedRectPath(selRect, 8));
+                    }
                     
-                    string icon = t == "Light" ? "☀" : (t == "Dark" ? "☾" : "🖥");
-                    using (var themeTextBrush = new SolidBrush(isSel ? Color.DodgerBlue : secondaryBrush.Color))
-                        g.DrawString($"{icon} {t}", new Font("Segoe UI", 11, isSel ? FontStyle.Bold : FontStyle.Regular), themeTextBrush, btnRect.X + (btnRect.Width/2) - 30, btnRect.Y + 18);
-                    
-                    if (t == "Light") themeX += 200;
-                    else if (t == "Dark") themeX += 200;
+                    // Draw Icon and Text
+                    using (var themeTextBrush = new SolidBrush(isSel ? Color.White : secondaryBrush.Color))
+                    {
+                        var font = new Font("Segoe UI", 10, isSel ? FontStyle.Bold : FontStyle.Regular);
+                        int centerX = btnRect.X + btnRect.Width / 2;
+                        int centerY = btnRect.Y + btnRect.Height / 2;
+                        
+                        if (t == "Light") {
+                            g.DrawEllipse(new Pen(themeTextBrush.Color, 1.5f), centerX - 35, centerY - 6, 12, 12);
+                            for (int a = 0; a < 360; a += 45) {
+                                float rad = a * (float)Math.PI / 180f;
+                                g.DrawLine(new Pen(themeTextBrush.Color, 1.5f), 
+                                    centerX - 29 + (float)Math.Cos(rad) * 8, centerY + (float)Math.Sin(rad) * 8,
+                                    centerX - 29 + (float)Math.Cos(rad) * 11, centerY + (float)Math.Sin(rad) * 11);
+                            }
+                        } else if (t == "Dark") {
+                            var moonPath = new GraphicsPath();
+                            moonPath.AddArc(centerX - 35, centerY - 8, 16, 16, -60, 240);
+                            moonPath.AddArc(centerX - 30, centerY - 8, 16, 16, 160, -200);
+                            moonPath.CloseFigure();
+                            g.DrawPath(new Pen(themeTextBrush.Color, 1.5f), moonPath);
+                        } else {
+                            var p = new Pen(themeTextBrush.Color, 1.5f);
+                            g.DrawRectangle(p, centerX - 40, centerY - 8, 18, 12);
+                            g.DrawLine(p, centerX - 31, centerY + 4, centerX - 31, centerY + 7);
+                            g.DrawLine(p, centerX - 35, centerY + 7, centerX - 27, centerY + 7);
+                        }
+
+                        g.DrawString(t, font, themeTextBrush, centerX - 15, centerY - 10);
+                    }
                 }
 
                 // 2. Lock Threshold Card
@@ -645,7 +706,7 @@ namespace BluetoothSafetyLock
                 // Value Badge
                 var badgeRect = new Rectangle(840, 440, 80, 30);
                 FillRoundedRect(g, CardInnerColor, badgeRect, 6);
-                // Visa positivt värde i badge (t.ex. 75 istället för -75)
+                // Show positive value in badge (e.g. 75 instead of -75)
                 g.DrawString($"{Math.Abs(_monitoringService.Threshold)} dBm", new Font("Segoe UI", 9, FontStyle.Bold), secondaryBrush, 850, 447);
 
                 // Slider
@@ -686,14 +747,20 @@ namespace BluetoothSafetyLock
         }
 
         private void DrawToggle(Graphics g, int x, int y, bool on) { FillRoundedRect(g, on ? Color.DodgerBlue : Color.FromArgb(45, 55, 75), new Rectangle(x, y, 60, 30), 15); g.FillEllipse(Brushes.White, on ? x + 35 : x + 5, y + 5, 20, 20); }
+        private GraphicsPath GetRoundedRectPath(Rectangle rect, int radius)
+        {
+            var path = new GraphicsPath();
+            path.AddArc(rect.X, rect.Y, radius * 2, radius * 2, 180, 90);
+            path.AddArc(rect.Right - radius * 2, rect.Y, radius * 2, radius * 2, 270, 90);
+            path.AddArc(rect.Right - radius * 2, rect.Bottom - radius * 2, radius * 2, radius * 2, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - radius * 2, radius * 2, radius * 2, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
         private void FillRoundedRect(Graphics g, Color color, Rectangle rect, int radius) {
             using (var brush = new SolidBrush(color)) {
-                var path = new GraphicsPath();
-                path.AddArc(rect.X, rect.Y, radius * 2, radius * 2, 180, 90);
-                path.AddArc(rect.Right - radius * 2, rect.Y, radius * 2, radius * 2, 270, 90);
-                path.AddArc(rect.Right - radius * 2, rect.Bottom - radius * 2, radius * 2, radius * 2, 0, 90);
-                path.AddArc(rect.X, rect.Bottom - radius * 2, radius * 2, radius * 2, 90, 90);
-                path.CloseFigure();
+                var path = GetRoundedRectPath(rect, radius);
                 g.FillPath(brush, path);
             }
         }

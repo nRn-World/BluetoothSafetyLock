@@ -52,24 +52,24 @@ namespace BluetoothSafetyLock
         {
             var menu = new ContextMenuStrip();
             
-            menu.Items.Add("Inställningar", null, ShowSettings);
+            menu.Items.Add("Settings", null, ShowSettings);
             menu.Items.Add("Snooze (5m)", null, (s, e) => Snooze(5));
             menu.Items.Add("-");
-            menu.Items.Add("Avsluta", null, (s, e) => Exit());
+            menu.Items.Add("Exit", null, (s, e) => Exit());
             
             return menu;
         }
 
         private void OnStatusChanged(string status)
         {
-            // Inga notiser - allt körs tyst i bakgrunden.
-            // Uppdatera bara tray-texten.
+            // No notifications - everything runs silently in background.
+            // Just update tray text.
             UpdateTrayText();
         }
 
         private void OnLocked()
         {
-            _notifyIcon.Text = "BluetoothSafetyLock - LÅST";
+            _notifyIcon.Text = "BluetoothSafetyLock - LOCKED";
             _notifyIcon.Icon = SystemIcons.Error;
         }
 
@@ -79,7 +79,7 @@ namespace BluetoothSafetyLock
             {
                 string status = _bluetoothManager.IsDeviceConnected
                     ? $"{_monitoringService.CurrentRssi} dBm"
-                    : "Frånkopplad";
+                    : "Disconnected";
 
                 string battery = _bluetoothManager.MonitoredBatteryLevel.HasValue
                     ? $" | 🔋{_bluetoothManager.MonitoredBatteryLevel.Value}%"
@@ -90,7 +90,7 @@ namespace BluetoothSafetyLock
             }
             else
             {
-                _notifyIcon.Text = "BluetoothSafetyLock - Pausad";
+                _notifyIcon.Text = "BluetoothSafetyLock - Paused";
             }
         }
 
