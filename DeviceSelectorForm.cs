@@ -27,22 +27,8 @@ namespace HardwareAnchor
             _monitoringService.IsPaused = true;
 
             _bluetoothManager.DeviceDiscovered += OnDeviceDiscovered;
-            _bluetoothManager.DiscoveryCompleted += OnDiscoveryCompleted;
-            _bluetoothManager.PairingConfirmationRequested += OnPairingConfirmation;
 
             StartScanning();
-        }
-
-        private void OnPairingConfirmation(string pin, Action<bool> respond)
-        {
-            if (this.InvokeRequired) { this.Invoke(() => OnPairingConfirmation(pin, respond)); return; }
-
-            string msg = string.IsNullOrEmpty(pin) 
-                ? "Do you want to pair this device?" 
-                : $"Does the code \"{pin}\" match the one on your device?";
-
-            var result = MessageBox.Show(msg, "Confirm Bluetooth Pairing", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            respond(result == DialogResult.Yes);
         }
 
         private void InitializeForm()
@@ -129,17 +115,9 @@ namespace HardwareAnchor
             _deviceList!.Items.Add(device.Name + (device.IsPaired ? "" : " (Unpaired)"));
         }
 
-        private void OnDiscoveryCompleted()
-        {
-            if (this.InvokeRequired) { this.Invoke(OnDiscoveryCompleted); return; }
-            if (_devices.Count == 0) { _deviceList!.Items.Clear(); _deviceList.Items.Add("No Bluetooth devices found."); }
-        }
-
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             _bluetoothManager.DeviceDiscovered -= OnDeviceDiscovered;
-            _bluetoothManager.DiscoveryCompleted -= OnDiscoveryCompleted;
-            _bluetoothManager.PairingConfirmationRequested -= OnPairingConfirmation;
             _bluetoothManager.StopDiscovery();
             base.OnFormClosing(e);
         }

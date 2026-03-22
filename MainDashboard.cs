@@ -25,13 +25,28 @@ namespace HardwareAnchor
         private bool _isDraggingSlider = false;
         private Point _mouseLocation = Point.Empty;
 
-        private Color BackgroundColor => _appearanceTheme == "Light" ? Color.FromArgb(245, 247, 250) : Color.FromArgb(14, 18, 26);
-        private Color SidebarColor => _appearanceTheme == "Light" ? Color.FromArgb(255, 255, 255) : Color.FromArgb(19, 24, 35);
-        private Color CardColor => _appearanceTheme == "Light" ? Color.FromArgb(255, 255, 255) : Color.FromArgb(26, 35, 51);
-        private Color CardInnerColor => _appearanceTheme == "Light" ? Color.FromArgb(240, 242, 245) : Color.FromArgb(19, 24, 35);
-        private Color PrimaryTextColor => _appearanceTheme == "Light" ? Color.FromArgb(30, 35, 45) : Color.White;
-        private Color SecondaryTextColor => _appearanceTheme == "Light" ? Color.FromArgb(100, 110, 130) : Color.Gray;
-        private Color SidebarActiveColor => _appearanceTheme == "Light" ? Color.FromArgb(240, 245, 255) : Color.FromArgb(30, 38, 54);
+        private bool IsDarkTheme => _appearanceTheme == "Dark" || (_appearanceTheme == "Auto" && IsWindowsInDarkMode());
+
+        private bool IsWindowsInDarkMode()
+        {
+            try {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) {
+                    if (key != null) {
+                        var val = key.GetValue("AppsUseLightTheme");
+                        if (val is int i) return i == 0;
+                    }
+                }
+            } catch { }
+            return true; // Default till mörkt om vi inte kan läsa registret
+        }
+
+        private Color BackgroundColor => !IsDarkTheme ? Color.FromArgb(245, 247, 250) : Color.FromArgb(14, 18, 26);
+        private Color SidebarColor => !IsDarkTheme ? Color.FromArgb(255, 255, 255) : Color.FromArgb(19, 24, 35);
+        private Color CardColor => !IsDarkTheme ? Color.FromArgb(255, 255, 255) : Color.FromArgb(26, 35, 51);
+        private Color CardInnerColor => !IsDarkTheme ? Color.FromArgb(240, 242, 245) : Color.FromArgb(19, 24, 35);
+        private Color PrimaryTextColor => !IsDarkTheme ? Color.FromArgb(30, 35, 45) : Color.White;
+        private Color SecondaryTextColor => !IsDarkTheme ? Color.FromArgb(100, 110, 130) : Color.Gray;
+        private Color SidebarActiveColor => !IsDarkTheme ? Color.FromArgb(240, 245, 255) : Color.FromArgb(30, 38, 54);
 
         public MainDashboard(BluetoothManager bluetoothManager, MonitoringService monitoringService)
         {

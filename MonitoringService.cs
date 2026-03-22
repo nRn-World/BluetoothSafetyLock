@@ -9,9 +9,7 @@ namespace HardwareAnchor
     {
         private readonly BluetoothManager _bluetoothManager;
         private readonly System.Timers.Timer _timer;
-        private DateTime? _firstViolationTime;
         public DateTime LastUpdateReceived { get; private set; } = DateTime.MinValue;
-        private bool _hasSeenDeviceSinceStarting = false;
         private DateTime _monitoringStartTime = DateTime.MinValue;
         public string MonitoredDeviceName { get; set; } = "None";
         
@@ -142,7 +140,6 @@ namespace HardwareAnchor
             {
                 CurrentRssi = rssi;
                 LastUpdateReceived = DateTime.Now;
-                _hasSeenDeviceSinceStarting = true;
                 _realRssiSamples++;
                 if (_realRssiSamples >= RealRssiSamplesRequired)
                     _hasConfirmedConnection = true;
@@ -190,7 +187,6 @@ namespace HardwareAnchor
         private void TriggerLock()
         {
             _isLocked = true;
-            _firstViolationTime = null;
             Locked?.Invoke();
             NativeMethods.ClearClipboard();
             NativeMethods.LockWorkStation();
@@ -200,15 +196,17 @@ namespace HardwareAnchor
         public async Task StartMonitoringAsync(string deviceId)
         {
             _monitoringStartTime = DateTime.Now;
-            LastUpdateReceived = DateTime.Now;
-            _hasSeenDeviceSinceStarting = false;
-            _firstViolationTime = null;
-            _isLocked = false;
-            _hasConfirmedConnection = false;
             _realRssiSamples = 0;
+            _hasConfirmedConnection = false;
             _pendingLock = false;
-            IsPaused = false;
+            _violationStrikes = 0;
+            _isLocked = false;
+            LastUpdateReceived = DateTime.Now;
+            
             await _bluetoothManager.StartMonitoringAsync(deviceId);
+            MonitoredDeviceName = _bluetoothManager.MonitoredDeviceId ?? "Device";
+            IsPaused = false;
+            StatusChanged?.Invoke($"Monitoring started for {MonitoredDeviceName}");
         }
 
         public void StopMonitoring() { _bluetoothManager.StopMonitoring(); }

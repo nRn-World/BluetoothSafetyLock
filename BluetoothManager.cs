@@ -31,9 +31,7 @@ namespace HardwareAnchor
         private BluetoothDevice? _monitoredClassicDevice;
 
         public event Action<BluetoothDeviceModel>? DeviceDiscovered;
-        public event Action? DiscoveryCompleted;
         public event Action<short>? RssiUpdated;
-        public event Action<string, Action<bool>>? PairingConfirmationRequested;
         /// <summary>Anropas när batteriprocent för övervakad enhet uppdaterats.</summary>
         public event Action? MonitoredBatteryChanged;
 
