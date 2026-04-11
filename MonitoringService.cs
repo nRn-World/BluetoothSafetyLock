@@ -34,10 +34,10 @@ namespace BluetoothSafetyLock
         /// <summary>Vid enbart BLE-annonser, vänta 20 sekunder efter start innan vi tillåter låsning vid tystnad.</summary>
         private const double MinMonitoringSecondsBeforeSilenceLock = 20.0;
         /// <summary>
-        /// Öka toleransen för signalförlust till 25 sekunder. Detta förhindrar slumpmässiga utloggningar
-        /// vid tillfälliga störningar, men loggar fortfarande ut om kontakten tappas helt.
+        /// Tillåter upp till 5 sekunders tystnad för att absorbera små dippar, men håller det kort
+        /// för att snabba upp avstängningen.
         /// </summary>
-        private const double AdvertisementSilenceSeconds = 10.0;
+        private const double AdvertisementSilenceSeconds = 5.0;
         private const int LockDelayMsWindowsDisconnect = 100; // Snabbare respons (0.1s)
         private const int LockDelayMsSilenceInferred = 500;   // Snabbare respons (0.5s)
 
@@ -193,13 +193,13 @@ namespace BluetoothSafetyLock
                 return;
             }
             
-            // Drop UI to bottom if silence > 6 seconds to prevent micro-disconnect jitters
-            if ((DateTime.Now - LastUpdateReceived).TotalSeconds > 6.0)
+            // Drop UI to bottom if silence > 5 seconds to match the silence timeout
+            if ((DateTime.Now - LastUpdateReceived).TotalSeconds > 5.0)
             {
                 CurrentRssi = -110;
             }
             
-            // If we haven't heard anything for 10 seconds (AdvertisementSilenceSeconds), lock.
+            // If we haven't heard anything for 5 seconds (AdvertisementSilenceSeconds), lock.
             if ((DateTime.Now - LastUpdateReceived).TotalSeconds < AdvertisementSilenceSeconds) return;
             
             ScheduleDisconnectLock(fromWindowsDisconnect: false);
