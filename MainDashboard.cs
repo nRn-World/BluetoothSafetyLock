@@ -320,8 +320,19 @@ namespace BluetoothSafetyLock
             }
 
             if (new Rectangle(40, this.Height - 80, 180, 45).Contains(e.Location)) {
-                _monitoringService.IsPaused = !_monitoringService.IsPaused;
-                if (_monitoringService.IsPaused) _monitoringService.StopMonitoring();
+                if (_monitoringService.IsPaused) 
+                {
+                    if (!string.IsNullOrEmpty(_bluetoothManager.MonitoredDeviceId)) {
+                        _ = _monitoringService.StartMonitoringAsync(_bluetoothManager.MonitoredDeviceId);
+                    } else {
+                        MessageBox.Show("Please select a device to monitor from the Devices menu first.", "No Device Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                } 
+                else 
+                {
+                    _monitoringService.IsPaused = true;
+                    _monitoringService.StopMonitoring();
+                }
                 this.Invalidate();
             }
         }
