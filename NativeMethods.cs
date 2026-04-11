@@ -17,6 +17,9 @@ namespace BluetoothSafetyLock
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool CloseClipboard();
 
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool DestroyIcon(IntPtr hIcon);
+
         [DllImport("user32.dll")]
         public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
 
@@ -74,8 +77,10 @@ namespace BluetoothSafetyLock
                 using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) {
                     if (key != null) {
                         if (enable) {
-                            string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
-                            key.SetValue("BluetoothSafetyLock", $"\"{exePath}\"");
+                            string? exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                            if (exePath != null) {
+                                key.SetValue("BluetoothSafetyLock", $"\"{exePath}\"");
+                            }
                         } else {
                             key.DeleteValue("BluetoothSafetyLock", false);
                         }

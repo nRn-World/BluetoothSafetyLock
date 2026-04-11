@@ -18,6 +18,9 @@ namespace BluetoothSafetyLock
         public int GracePeriodSeconds { get; set; } = 15;
         public bool IsPaused { get; set; } = true;
         public bool IsAutoUnlockEnabled { get; set; } = true;
+        public bool IsLockWorkstationEnabled { get; set; } = true;
+        public bool IsClearClipboardEnabled { get; set; } = true;
+        public bool IsPlayWarningEnabled { get; set; } = false;
         private bool _isLocked = false;
         /// <summary>
         /// True efter Windows IsConnected (-50) eller efter tillräckligt många BLE-RSSI-uppdateringar (telefonen syns i luften).
@@ -188,8 +191,16 @@ namespace BluetoothSafetyLock
         {
             _isLocked = true;
             Locked?.Invoke();
-            NativeMethods.ClearClipboard();
-            NativeMethods.LockWorkStation();
+            
+            if (IsPlayWarningEnabled)
+                System.Media.SystemSounds.Exclamation.Play();
+
+            if (IsClearClipboardEnabled)
+                NativeMethods.ClearClipboard();
+                
+            if (IsLockWorkstationEnabled)
+                NativeMethods.LockWorkStation();
+                
             StatusChanged?.Invoke("Workstation locked.");
         }
 

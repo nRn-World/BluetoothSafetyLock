@@ -45,14 +45,7 @@ namespace BluetoothSafetyLock
             _monitoringService = monitoringService;
 
             try {
-                string logoPath = System.IO.Path.Combine(Application.StartupPath, "bluetooth-safetylock-text.png");
-                // Fallback if in project folder under debug
-                if (!System.IO.File.Exists(logoPath))
-                    logoPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bluetooth-safetylock-text.png");
-                // Final attempt: Project root
-                if (!System.IO.File.Exists(logoPath))
-                    logoPath = @"d:\APPS By nRn World\Windows\BluetoothSafetyLock\bluetooth-safetylock-text.png";
-
+                string logoPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bluetooth-safetylock-text.png");
                 if (System.IO.File.Exists(logoPath))
                     _logoImage = Image.FromFile(logoPath);
             } catch { }
@@ -63,6 +56,11 @@ namespace BluetoothSafetyLock
                 _launchAtStartup = true;
                 NativeMethods.SetStartup(true);
             }
+
+            _lockWorkstation = _monitoringService.IsLockWorkstationEnabled;
+            _autoUnlock = _monitoringService.IsAutoUnlockEnabled;
+            _clearClipboard = _monitoringService.IsClearClipboardEnabled;
+            _playWarning = _monitoringService.IsPlayWarningEnabled;
 
             this.Text = "Bluetooth SafetyLock";
             this.Size = new Size(1000, 700);
@@ -287,10 +285,10 @@ namespace BluetoothSafetyLock
             }
 
             if (_activeView == "Security Actions") {
-                if (new Rectangle(860, 255, 60, 30).Contains(e.Location)) _lockWorkstation = !_lockWorkstation;
-                if (new Rectangle(860, 345, 60, 30).Contains(e.Location)) _autoUnlock = !_autoUnlock;
-                if (new Rectangle(860, 435, 60, 30).Contains(e.Location)) _clearClipboard = !_clearClipboard;
-                if (new Rectangle(860, 525, 60, 30).Contains(e.Location)) _playWarning = !_playWarning;
+                if (new Rectangle(860, 255, 60, 30).Contains(e.Location)) { _lockWorkstation = !_lockWorkstation; _monitoringService.IsLockWorkstationEnabled = _lockWorkstation; }
+                if (new Rectangle(860, 345, 60, 30).Contains(e.Location)) { _autoUnlock = !_autoUnlock; _monitoringService.IsAutoUnlockEnabled = _autoUnlock; }
+                if (new Rectangle(860, 435, 60, 30).Contains(e.Location)) { _clearClipboard = !_clearClipboard; _monitoringService.IsClearClipboardEnabled = _clearClipboard; }
+                if (new Rectangle(860, 525, 60, 30).Contains(e.Location)) { _playWarning = !_playWarning; _monitoringService.IsPlayWarningEnabled = _playWarning; }
                 if (new Rectangle(860, 615, 60, 30).Contains(e.Location)) {
                     _launchAtStartup = !_launchAtStartup;
                     NativeMethods.SetStartup(_launchAtStartup);

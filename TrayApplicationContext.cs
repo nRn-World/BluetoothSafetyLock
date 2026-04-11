@@ -10,6 +10,7 @@ namespace BluetoothSafetyLock
         private readonly BluetoothManager _bluetoothManager;
         private readonly MonitoringService _monitoringService;
         private readonly System.Timers.Timer _statusTimer;
+        private IntPtr _hIcon = IntPtr.Zero;
 
         public TrayApplicationContext()
         {
@@ -19,12 +20,11 @@ namespace BluetoothSafetyLock
             Icon appIcon = SystemIcons.Shield;
             try {
                 string logoPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bluetooth-safetylock-icon.png");
-                if (!System.IO.File.Exists(logoPath))
-                    logoPath = @"d:\APPS By nRn World\Windows\BluetoothSafetyLock\bluetooth-safetylock-icon.png";
 
                 if (System.IO.File.Exists(logoPath)) {
                     using (Bitmap bmp = new Bitmap(logoPath)) {
-                        appIcon = Icon.FromHandle(bmp.GetHicon());
+                        _hIcon = bmp.GetHicon();
+                        appIcon = Icon.FromHandle(_hIcon);
                     }
                 }
             } catch { }
@@ -132,6 +132,12 @@ namespace BluetoothSafetyLock
         private void Exit()
         {
             _notifyIcon.Visible = false;
+            _notifyIcon.Dispose();
+            if (_hIcon != IntPtr.Zero)
+            {
+                NativeMethods.DestroyIcon(_hIcon);
+                _hIcon = IntPtr.Zero;
+            }
             _monitoringService.Dispose();
             Application.Exit();
         }
