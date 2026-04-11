@@ -123,7 +123,8 @@ namespace BluetoothSafetyLock
         {
             if (rssi == ConnectionWatcherDisconnected)
             {
-                // A native connection was lost. We DO NOT overwrite CurrentRssi for graph stability.
+                // A native connection was lost. Drop UI instantly to visualize disconnect!
+                CurrentRssi = -110;
                 ScheduleDisconnectLock(fromWindowsDisconnect: true);
                 return;
             }
@@ -190,6 +191,12 @@ namespace BluetoothSafetyLock
             {
                 LastUpdateReceived = DateTime.Now;
                 return;
+            }
+            
+            // Drop UI to bottom if silence > 3 seconds
+            if ((DateTime.Now - LastUpdateReceived).TotalSeconds > 3.0)
+            {
+                CurrentRssi = -110;
             }
             
             // If we haven't heard anything for 5 seconds (AdvertisementSilenceSeconds), lock.
