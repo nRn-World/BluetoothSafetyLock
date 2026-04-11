@@ -86,7 +86,7 @@ namespace BluetoothSafetyLock
             _lockDelayTimer = null;
         }
 
-        /// <param name="fromWindowsDisconnect">True when Windows reports disconnect (-128); short delay.</param>
+        /// <param name="fromWindowsDisconnect">True when Windows reports disconnect (-128); uses grace period instead of instant lock.</param>
         private void ScheduleDisconnectLock(bool fromWindowsDisconnect)
         {
             if (IsPaused || _isLocked || !_hasConfirmedConnection) return;
@@ -94,8 +94,6 @@ namespace BluetoothSafetyLock
             if (!fromWindowsDisconnect && (DateTime.Now - _monitoringStartTime).TotalSeconds < MinMonitoringSecondsBeforeSilenceLock) return;
             if (_pendingLock) return;
 
-            // Require multiple "strikes" on signal loss to avoid accidental locks.
-            // On explicit Windows disconnect, we lock immediately (strike 3).
             if (!fromWindowsDisconnect)
             {
                 _violationStrikes++;
@@ -103,7 +101,11 @@ namespace BluetoothSafetyLock
             }
 
             _pendingLock = true;
-            int delayMs = fromWindowsDisconnect ? LockDelayMsWindowsDisconnect : LockDelayMsSilenceInferred;
+            
+            // Use the user's Grace Period slider!
+            int delayMs = GracePeriodSeconds * 1000;
+            if (delayMs <= 0) delayMs = 500; // minimum
+
             _lockDelayTimer?.Stop();
             _lockDelayTimer?.Dispose();
             _lockDelayTimer = new System.Timers.Timer(delayMs) { AutoReset = false };
@@ -121,47 +123,56 @@ namespace BluetoothSafetyLock
         {
             if (rssi == ConnectionWatcherDisconnected)
             {
-                CurrentRssi = ConnectionWatcherDisconnected;
+                // A native connection was lost. We DO NOT overwrite CurrentRssi for graph stability.
                 ScheduleDisconnectLock(fromWindowsDisconnect: true);
                 return;
             }
 
-            // Reset strikes on every successful signal update
-            if (rssi > Threshold || rssi == ConnectionWatcherConnected)
+            if (rssi == ConnectionWatcherConnected)
+            {
+                // A native connection was established. We DO NOT overwrite CurrentRssi for graph stability.
+                _hasConfirmedConnection = true;
+                LastUpdateReceived = DateTime.Now;
+                
+                // Still cancel any pending locks because we re-established connection!
+                _violationStrikes = 0;
+                if (_pendingLock) CancelPendingLock();
+                
+                if (!IsPaused && _isLocked && IsAutoUnlockEnabled)
+                {
+                    _isLocked = false;
+                    _monitoringStartTime = DateTime.Now;
+                    NativeMethods.WakeScreen();
+                    StatusChanged?.Invoke("Welcome back!");
+                }
+                return;
+            }
+
+            // REAL BLE RSSI
+            CurrentRssi = rssi;
+            LastUpdateReceived = DateTime.Now;
+            _realRssiSamples++;
+            if (_realRssiSamples >= RealRssiSamplesRequired)
+                _hasConfirmedConnection = true;
+
+            // Reset strikes if signal is good
+            if (rssi > Threshold)
             {
                 _violationStrikes = 0;
                 if (_pendingLock) CancelPendingLock();
-            }
-
-            if (rssi == ConnectionWatcherConnected)
-            {
-                _hasConfirmedConnection = true;
-                LastUpdateReceived = DateTime.Now;
-                CurrentRssi = rssi;
+                
+                if (!IsPaused && _isLocked && IsAutoUnlockEnabled)
+                {
+                    _isLocked = false;
+                    _monitoringStartTime = DateTime.Now;
+                    NativeMethods.WakeScreen();
+                    StatusChanged?.Invoke("Welcome back!");
+                }
             }
             else
             {
-                CurrentRssi = rssi;
-                LastUpdateReceived = DateTime.Now;
-                _realRssiSamples++;
-                if (_realRssiSamples >= RealRssiSamplesRequired)
-                    _hasConfirmedConnection = true;
-                
-                // If signal is below threshold, count as strike
-                if (rssi < Threshold)
-                {
-                    ScheduleDisconnectLock(fromWindowsDisconnect: false);
-                }
-            }
-
-            if (IsPaused) return;
-
-            if (_isLocked && IsAutoUnlockEnabled && rssi == ConnectionWatcherConnected)
-            {
-                _isLocked = false;
-                _monitoringStartTime = DateTime.Now;
-                NativeMethods.WakeScreen();
-                StatusChanged?.Invoke("Welcome back!");
+                // Signal is below threshold, count as strike
+                ScheduleDisconnectLock(fromWindowsDisconnect: false);
             }
         }
 
