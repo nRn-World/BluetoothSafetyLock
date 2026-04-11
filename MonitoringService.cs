@@ -37,7 +37,7 @@ namespace BluetoothSafetyLock
         /// Öka toleransen för signalförlust till 25 sekunder. Detta förhindrar slumpmässiga utloggningar
         /// vid tillfälliga störningar, men loggar fortfarande ut om kontakten tappas helt.
         /// </summary>
-        private const double AdvertisementSilenceSeconds = 5.0;
+        private const double AdvertisementSilenceSeconds = 10.0;
         private const int LockDelayMsWindowsDisconnect = 100; // Snabbare respons (0.1s)
         private const int LockDelayMsSilenceInferred = 500;   // Snabbare respons (0.5s)
 
@@ -123,8 +123,8 @@ namespace BluetoothSafetyLock
         {
             if (rssi == ConnectionWatcherDisconnected)
             {
-                // A native connection was lost. Drop UI instantly to visualize disconnect!
-                CurrentRssi = -110;
+                // Native connection lost. We allow the silence timeout to handle the UI drop
+                // because mobile devices constantly toggle active connection to save power.
                 ScheduleDisconnectLock(fromWindowsDisconnect: true);
                 return;
             }
@@ -193,13 +193,13 @@ namespace BluetoothSafetyLock
                 return;
             }
             
-            // Drop UI to bottom if silence > 3 seconds
-            if ((DateTime.Now - LastUpdateReceived).TotalSeconds > 3.0)
+            // Drop UI to bottom if silence > 6 seconds to prevent micro-disconnect jitters
+            if ((DateTime.Now - LastUpdateReceived).TotalSeconds > 6.0)
             {
                 CurrentRssi = -110;
             }
             
-            // If we haven't heard anything for 5 seconds (AdvertisementSilenceSeconds), lock.
+            // If we haven't heard anything for 10 seconds (AdvertisementSilenceSeconds), lock.
             if ((DateTime.Now - LastUpdateReceived).TotalSeconds < AdvertisementSilenceSeconds) return;
             
             ScheduleDisconnectLock(fromWindowsDisconnect: false);
