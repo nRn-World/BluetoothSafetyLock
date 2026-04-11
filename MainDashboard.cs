@@ -475,7 +475,7 @@ namespace BluetoothSafetyLock
                 // Graph Area
                 var graphRect = new Rectangle(330, 400, 580, 150);
                 
-                // Threshold Line (Red dotted)
+            // Threshold Line (Red dotted)
             using (var thresholdPen = new Pen(Color.FromArgb(150, 255, 60, 60), 1))
             {
                 thresholdPen.DashStyle = DashStyle.Dash;
@@ -483,6 +483,15 @@ namespace BluetoothSafetyLock
                 float normalizedThreshold = (_monitoringService.Threshold + 110) / 70f;
                 int thresholdY = graphRect.Bottom - (int)(normalizedThreshold * graphRect.Height);
                 g.DrawLine(thresholdPen, graphRect.Left, thresholdY, graphRect.Right, thresholdY);
+
+                // Draw Threshold dBm Label
+                string threshText = $"Threshold: {_monitoringService.Threshold} dBm";
+                var font = new Font("Segoe UI", 9, FontStyle.Bold);
+                var textSize = g.MeasureString(threshText, font);
+                using (var threshBrush = new SolidBrush(Color.FromArgb(200, 255, 80, 80)))
+                {
+                    g.DrawString(threshText, font, threshBrush, graphRect.Right - textSize.Width, thresholdY - 18);
+                }
             }
 
             // Signal Line
