@@ -22,7 +22,8 @@ namespace BluetoothSafetyLock
         private bool _playWarning = false;
         private bool _launchAtStartup = true;
         private string _appearanceTheme = "Auto"; // Light, Dark, Auto
-        private Image? _logoImage;
+        private Image? _logoLight;
+        private Image? _logoDark;
         private int _settingsScrollY = 0;
         private bool _isDraggingSlider = false;
         private bool _isDraggingWindow = false;
@@ -44,11 +45,11 @@ namespace BluetoothSafetyLock
             _bluetoothManager = bluetoothManager;
             _monitoringService = monitoringService;
 
-            try {
-                string logoPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bluetooth-safetylock-text.png");
-                if (System.IO.File.Exists(logoPath))
-                    _logoImage = Image.FromFile(logoPath);
-            } catch { }
+            // Logotypes come from the embedded graphic package (Logo/), one per theme.
+            _logoLight = LoadEmbeddedLogo("BluetoothSafetyLock.Logo.logo-horizontal-light.png");
+            _logoDark = LoadEmbeddedLogo("BluetoothSafetyLock.Logo.logo-horizontal-dark.png");
+            if (_logoLight == null && _logoDark == null)
+                Logger.Warn("No embedded logo could be loaded; falling back to drawn branding.");
 
             _launchAtStartup = NativeMethods.IsInStartup();
             if (!_launchAtStartup) 
@@ -62,12 +63,20 @@ namespace BluetoothSafetyLock
             _clearClipboard = _monitoringService.IsClearClipboardEnabled;
             _playWarning = _monitoringService.IsPlayWarningEnabled;
 
+            // FAS 1.1: restore persisted theme.
+            _appearanceTheme = SettingsStore.Current.AppearanceTheme;
+
             this.Text = "Bluetooth SafetyLock";
             this.Size = new Size(1000, 700);
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(14, 18, 26);
             this.DoubleBuffered = true;
+
+            // App icon for the title bar/Alt+Tab and taskbar. The form owns and
+            // disposes this instance; size follows the system DPI scale (FAS: sharp at 100 % and 200 %).
+            try { this.Icon = AppIcons.GetWindowIcon(); }
+            catch (Exception ex) { Logger.Warn($"Could not set window icon. {ex.Message}"); }
 
             this.MouseWheel += OnMainDashboardMouseWheel;
             _bluetoothManager.DeviceDiscovered += OnDeviceDiscovered;
@@ -83,6 +92,24 @@ namespace BluetoothSafetyLock
             this.MouseDown += OnMainDashboardMouseDown;
             this.MouseMove += OnMainDashboardMouseMove;
             this.MouseUp += OnMainDashboardMouseUp;
+        }
+
+        /// <summary>Loads an embedded PNG without file-system dependency. GDI+ requires the stream to stay alive, so it is copied to memory first.</summary>
+        private static Image? LoadEmbeddedLogo(string resourceName)
+        {
+            try
+            {
+                using var stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName);
+                if (stream == null) return null;
+                var memory = new System.IO.MemoryStream();
+                stream.CopyTo(memory);
+                return Image.FromStream(memory); // memory stays referenced by the Image; deliberately not disposed
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Could not load embedded logo '{resourceName}'. {ex.Message}");
+                return null;
+            }
         }
 
         private void OnMainDashboardMouseWheel(object? sender, MouseEventArgs e)
@@ -138,12 +165,37 @@ namespace BluetoothSafetyLock
 
         private void OnMainDashboardMouseUp(object? sender, MouseEventArgs e)
         {
+            if (_isDraggingSlider) SaveSettings(); // Persist slider values once, when the drag ends.
             _isDraggingSlider = false;
             _isDraggingWindow = false;
         }
 
+        /// <summary>FAS 1.1: write all current choices to %APPDATA%\BluetoothSafetyLock\settings.json.</summary>
+        private void SaveSettings()
+        {
+            var s = SettingsStore.Current;
+            s.Threshold = _monitoringService.Threshold;
+            s.GracePeriodSeconds = _monitoringService.GracePeriodSeconds;
+            s.IsLockWorkstationEnabled = _monitoringService.IsLockWorkstationEnabled;
+            s.IsAutoUnlockEnabled = _monitoringService.IsAutoUnlockEnabled;
+            s.IsClearClipboardEnabled = _monitoringService.IsClearClipboardEnabled;
+            s.IsPlayWarningEnabled = _monitoringService.IsPlayWarningEnabled;
+            s.AppearanceTheme = _appearanceTheme;
+            s.SelectedDeviceId = _bluetoothManager.MonitoredDeviceId ?? string.Empty;
+            s.SelectedDeviceName = _monitoringService.MonitoredDeviceName;
+            SettingsStore.SaveCurrent();
+        }
+
+        private async Task StartAndSaveAsync()
+        {
+            if (_bluetoothManager.MonitoredDeviceId == null) return;
+            await _monitoringService.StartMonitoringAsync(_bluetoothManager.MonitoredDeviceId);
+            SaveSettings();
+        }
+
         protected override void OnClosed(EventArgs e)
         {
+            SaveSettings();
             _refreshTimer.Stop();
             _refreshTimer.Dispose();
             _bluetoothManager.DeviceDiscovered -= OnDeviceDiscovered;
@@ -245,9 +297,11 @@ namespace BluetoothSafetyLock
                 int curY = e.Y + _settingsScrollY;
 
                 // Appearance Buttons (Y: 290)
-                if (new Rectangle(330, 290, 200, 50).Contains(e.X, curY)) _appearanceTheme = "Light";
-                if (new Rectangle(530, 290, 200, 50).Contains(e.X, curY)) _appearanceTheme = "Dark";
-                if (new Rectangle(730, 290, 200, 50).Contains(e.X, curY)) _appearanceTheme = "Auto";
+                bool themeChanged = false;
+                if (new Rectangle(330, 290, 200, 50).Contains(e.X, curY) && _appearanceTheme != "Light") { _appearanceTheme = "Light"; themeChanged = true; }
+                if (new Rectangle(530, 290, 200, 50).Contains(e.X, curY) && _appearanceTheme != "Dark") { _appearanceTheme = "Dark"; themeChanged = true; }
+                if (new Rectangle(730, 290, 200, 50).Contains(e.X, curY) && _appearanceTheme != "Auto") { _appearanceTheme = "Auto"; themeChanged = true; }
+                if (themeChanged) SaveSettings();
 
                 // Threshold Slider (Y: 550)
                 var thresholdRect = new Rectangle(330, 540, 580, 40);
@@ -293,6 +347,7 @@ namespace BluetoothSafetyLock
                     _launchAtStartup = !_launchAtStartup;
                     NativeMethods.SetStartup(_launchAtStartup);
                 }
+                SaveSettings();
                 this.Invalidate();
                 return;
             }
@@ -323,7 +378,7 @@ namespace BluetoothSafetyLock
                 if (_monitoringService.IsPaused) 
                 {
                     if (!string.IsNullOrEmpty(_bluetoothManager.MonitoredDeviceId)) {
-                        _ = _monitoringService.StartMonitoringAsync(_bluetoothManager.MonitoredDeviceId);
+                        _ = StartAndSaveAsync();
                     } else {
                         MessageBox.Show("Please select a device to monitor from the Devices menu first.", "No Device Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
@@ -332,6 +387,7 @@ namespace BluetoothSafetyLock
                 {
                     _monitoringService.IsPaused = true;
                     _monitoringService.StopMonitoring();
+                    SaveSettings();
                 }
                 this.Invalidate();
             }
@@ -368,18 +424,18 @@ namespace BluetoothSafetyLock
             var sidebarRect = new Rectangle(0, 0, 260, this.Height);
             using (var sbBrush = new SolidBrush(SidebarColor)) g.FillRectangle(sbBrush, sidebarRect);
 
-            // Rita Logga och Branding (enligt bild)
+            // Rita Logga och Branding — variant väljs efter aktivt tema
             int logoX = 30;
             int logoY = 50;
             int logoSize = 64;
 
-            if (_logoImage != null)
+            Image? logoImage = IsDarkTheme ? (_logoDark ?? _logoLight) : (_logoLight ?? _logoDark);
+            if (logoImage != null)
             {
-                // Om loggan finns, rita bara den (den innehåller redan texten enligt bilden)
-                // Vi ritar den med bibehållen aspekt-ratio om möjligt, annars som en bredare rektangel
-                float aspectRatio = (float)_logoImage.Width / _logoImage.Height;
+                // Ritad med bibehållen aspekt-ratio (850×280 px källa → ca 194×64 i sidebaren)
+                float aspectRatio = (float)logoImage.Width / logoImage.Height;
                 int drawWidth = (int)(logoSize * aspectRatio);
-                g.DrawImage(_logoImage, new Rectangle(logoX, logoY, drawWidth, logoSize));
+                g.DrawImage(logoImage, new Rectangle(logoX, logoY, drawWidth, logoSize));
             }
             else
             {

@@ -41,6 +41,10 @@ namespace BluetoothSafetyLock
             this.BackColor = Color.FromArgb(28, 28, 28);
             this.ForeColor = Color.White;
 
+            // App icon for the title bar and taskbar (embedded multi-size .ico).
+            try { this.Icon = AppIcons.GetWindowIcon(); }
+            catch (Exception ex) { Logger.Warn($"Could not set window icon. {ex.Message}"); }
+
             var titleLabel = new Label { Text = "Bluetooth Device Discovery", Font = new Font("Segoe UI", 12, FontStyle.Bold), Location = new Point(20, 20), AutoSize = true };
             _deviceList = new ListBox
             {
@@ -88,7 +92,16 @@ namespace BluetoothSafetyLock
                     _monitoringService.GracePeriodSeconds = (int)graceNumeric.Value;
                     _monitoringService.MonitoredDeviceName = selectedDevice.Name;
                     await _monitoringService.StartMonitoringAsync(selectedDevice.Id);
-                    
+
+                    // FAS 1.1: persist the chosen device and sensitivity so protection
+                    // survives a reboot without reconfiguration.
+                    var saved = SettingsStore.Current;
+                    saved.Threshold = _monitoringService.Threshold;
+                    saved.GracePeriodSeconds = _monitoringService.GracePeriodSeconds;
+                    saved.SelectedDeviceId = selectedDevice.Id;
+                    saved.SelectedDeviceName = selectedDevice.Name;
+                    SettingsStore.SaveCurrent();
+
                     MessageBox.Show($"Monitoring started for '{selectedDevice.Name}'.", "BluetoothSafetyLock Active", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     this.Close();
                 }

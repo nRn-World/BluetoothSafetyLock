@@ -8,6 +8,25 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>BluetoothSafetyLock</AssemblyName>
     <RootNamespace>BluetoothSafetyLock</RootNamespace>
+
+    <!-- FAS 4.1: professional version/metadata for the built exe -->
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Company>nRn World</Company>
+    <Product>BluetoothSafetyLock</Product>
+    <Authors>nRn World</Authors>
+    <Copyright>Copyright (c) 2026 nRn World. Non-commercial license — see LICENSE.</Copyright>
+    <Description>Automatically locks your Windows workstation when a paired Bluetooth device moves out of range. Local-only: no accounts, no cloud, no telemetry.</Description>
+    <ApplicationIcon>BluetoothSafetyLock.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- Embedded app icon for tray and window icons; copied to output for reference -->
+  <ItemGroup>
+    <EmbeddedResource Include="BluetoothSafetyLock.ico" />
+    <!-- Logotypes for light/dark theme, drawn by MainDashboard -->
+    <EmbeddedResource Include="Logo\logo-horizontal-light.png" />
+    <EmbeddedResource Include="Logo\logo-horizontal-dark.png" />
+  </ItemGroup>
 
 </Project>

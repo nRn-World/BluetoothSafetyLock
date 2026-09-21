@@ -31,7 +31,10 @@ Personalize the experience with Light, Dark, and Auto themes, and fine-tune the 
 - **Real-time Signal Tracking**: Visual graph showing the RSSI (signal strength) of your monitored device.
 - **Smart Proximity Locking**: Automatically locks your PC when the signal drops below your custom threshold.
 - **Grace Period**: Prevent accidental locks with a configurable waiting period.
-- **Auto-Unlock**: Seamlessly wakes and unlocks your PC when you return (if configured).
+- **Filtered Signal**: Raw Bluetooth signal is smoothed and hysteresis is applied, so the app doesn't lock on normal signal jitter.
+- **Persistent Settings**: All your settings and your selected device are saved locally and restored automatically at next start. No cloud, no accounts, no telemetry — everything stays on your machine.
+- **Single Instance**: Only one copy of the app can run at a time, so it never double-locks or double-polls.
+- **Wake Screen on Approach**: Wakes your screen when you return so you can log back in quickly. (Windows does not allow apps to unlock a locked session — you always authenticate yourself. This is by design in the operating system.)
 - **Clipboard Security**: Automatically clears your clipboard upon locking for extra privacy.
 - **Modern UI**: A beautiful, high-performance interface with support for Light and Dark modes.
 - **Silent Operation**: Runs quietly in the system tray with quick-access controls.
@@ -46,6 +49,11 @@ Personalize the experience with Light, Dark, and Auto themes, and fine-tune the 
 4. **Pair**: Open the app, go to the "Devices" tab, click "+ Add Device", and select your Bluetooth device.
 5. **Configure**: Fine-tune your "Lock Threshold" and "Grace Period" in the "Settings" tab to fit your needs.
 6. **Protect**: Ensure the service is started (click "Start Service" in the sidebar). Your PC is now secured!
+7. **Keep it running**: When "Launch at Startup" is enabled, the app starts automatically with Windows and resumes monitoring your last selected device — protection is on from boot without any extra steps.
+
+### 📁 Where are my settings stored?
+
+All settings are stored locally in `%APPDATA%\BluetoothSafetyLock\settings.json`, and logs in `%APPDATA%\BluetoothSafetyLock\logs\`. The app makes no network connections other than to the Bluetooth devices you monitor.
 
 ---
 

@@ -55,6 +55,7 @@ namespace BluetoothSafetyLock
         {
             if (IsDeviceConnected == connected) return;
             IsDeviceConnected = connected;
+            Logger.Info($"Connection state changed: {(connected ? "connected" : "disconnected")}.");
             RssiUpdated?.Invoke(connected ? RssiSentinelConnected : RssiSentinelDisconnected);
         }
 
@@ -66,23 +67,34 @@ namespace BluetoothSafetyLock
             if (_targetEndpointIdCache.TryGetValue(id, out var cached)) return cached;
 
             bool isTarget = false;
-            try {
+            try
+            {
                 var le = await BluetoothLEDevice.FromIdAsync(id);
-                if (le != null) {
-                    try {
-                        isTarget = le.BluetoothAddress == _targetBluetoothAddress;
-                    } finally { le.Dispose(); }
+                if (le != null)
+                {
+                    try { isTarget = le.BluetoothAddress == _targetBluetoothAddress; }
+                    finally { le.Dispose(); }
                 }
-            } catch { }
-            if (!isTarget) {
-                try {
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"IsUpdateForTargetDeviceAsync: BLE lookup failed for a device id. {ex.Message}");
+            }
+            if (!isTarget)
+            {
+                try
+                {
                     var classic = await BluetoothDevice.FromIdAsync(id);
-                    if (classic != null) {
-                        try {
-                            isTarget = classic.BluetoothAddress == _targetBluetoothAddress;
-                        } finally { classic.Dispose(); }
+                    if (classic != null)
+                    {
+                        try { isTarget = classic.BluetoothAddress == _targetBluetoothAddress; }
+                        finally { classic.Dispose(); }
                     }
-                } catch { }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"IsUpdateForTargetDeviceAsync: classic BT lookup failed for a device id. {ex.Message}");
+                }
             }
             _targetEndpointIdCache[id] = isTarget;
             return isTarget;
@@ -91,9 +103,20 @@ namespace BluetoothSafetyLock
         private void PublishNativeConnectionState()
         {
             if (_monitoredLeDevice == null && _monitoredClassicDevice == null) return;
-            bool leConnected = _monitoredLeDevice != null && _monitoredLeDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
-            bool classicConnected = _monitoredClassicDevice != null && _monitoredClassicDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
-            NotifyConnectionState(leConnected || classicConnected);
+            try
+            {
+                bool leConnected = _monitoredLeDevice != null && _monitoredLeDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
+                bool classicConnected = _monitoredClassicDevice != null && _monitoredClassicDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
+                NotifyConnectionState(leConnected || classicConnected);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Device object was disposed concurrently — safe to ignore, StopMonitoring is in progress.
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"PublishNativeConnectionState failed. {ex.Message}");
+            }
         }
 
         private void OnMonitoredLeConnectionStatusChanged(BluetoothLEDevice sender, object _)
@@ -125,7 +148,9 @@ namespace BluetoothSafetyLock
         private void StartConnectionPollTimer()
         {
             StopConnectionPollTimer();
-            _connectionPollTimer = new System.Timers.Timer(300) { AutoReset = true }; // Ännu snabbare polling (300ms) för omedelbar respons
+            // FAS 3.3: event-drivna signaler (ConnectionStatusChanged + DeviceWatcher) är primär källa.
+            // Polling är bara en fallback och ska därför vara lågfrekvent för att spara CPU/batteri.
+            _connectionPollTimer = new System.Timers.Timer(3000) { AutoReset = true };
             _connectionPollTimer.Elapsed += async (_, _) => await PollConnectionStateAsync();
             _connectionPollTimer.Start();
         }
@@ -133,26 +158,26 @@ namespace BluetoothSafetyLock
         private void StopConnectionPollTimer()
         {
             if (_connectionPollTimer == null) return;
-            try { _connectionPollTimer.Stop(); } catch { }
-            _connectionPollTimer.Dispose();
+            try { _connectionPollTimer.Stop(); _connectionPollTimer.Dispose(); }
+            catch (Exception ex) { Logger.Warn($"StopConnectionPollTimer failed. {ex.Message}"); }
             _connectionPollTimer = null;
         }
 
         private async Task PollConnectionStateAsync()
         {
             if (string.IsNullOrEmpty(_targetDeviceId)) return;
-            try {
-                if (_monitoredLeDevice != null || _monitoredClassicDevice != null) {
-                    PublishNativeConnectionState();
-                    return;
-                }
-            } catch { }
+            if (_monitoredLeDevice != null || _monitoredClassicDevice != null)
+            {
+                PublishNativeConnectionState();
+                return;
+            }
             await QueryInitialConnectionStateAsync();
         }
 
         public void StartDiscovery()
         {
-            try {
+            try
+            {
                 StopDiscovery();
                 string aqsFilter = "(System.Devices.Aep.ProtocolId:=\"{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}\" OR " +
                                    "System.Devices.Aep.ProtocolId:=\"{bb7bb58e-4e49-42f4-88af-48f1ea746d46}\")";
@@ -163,17 +188,27 @@ namespace BluetoothSafetyLock
                 _deviceDiscoveryWatcher.Start();
 
                 Task.Run(async () => {
-                    try {
+                    try
+                    {
                         var paired = await DeviceInformation.FindAllAsync(aqsFilter, requestedProperties);
                         foreach (var di in paired) if (!string.IsNullOrEmpty(di.Name)) { DeviceDiscovered?.Invoke(CreateSimpleModel(di, false)); _ = FetchDetailsAsync(di.Id); }
-                    } catch { }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn($"Initial paired-device enumeration failed. {ex.Message}");
+                    }
                 });
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("StartDiscovery failed — Bluetooth may be off or blocked.", ex);
+            }
         }
 
         private void OnDiscoveryAdded(DeviceWatcher s, DeviceInformation di)
         {
-            if (!string.IsNullOrEmpty(di.Name)) {
+            if (!string.IsNullOrEmpty(di.Name))
+            {
                 DeviceDiscovered?.Invoke(CreateSimpleModel(di, true));
                 _ = FetchDetailsAsync(di.Id);
             }
@@ -186,27 +221,40 @@ namespace BluetoothSafetyLock
 
         private BluetoothDeviceModel CreateSimpleModel(DeviceInformation di, bool nearby)
         {
-            var model = new BluetoothDeviceModel { Id = di.Id, Name = di.Name, IsPaired = di.Pairing.IsPaired, IsNearby = nearby, Category = GuessCategory(di.Name) };
+            var model = new BluetoothDeviceModel { Id = di.Id, Name = di.Name, IsPaired = di.Pairing.IsPaired, IsNearby = nearby, Category = GuessCategory(di) };
             if (di.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var ic)) model.IsConnected = ic is bool b && b;
             return model;
         }
 
-        private string GuessCategory(string name)
+        /// <summary>
+        /// FAS 3.4: kategorisering utan hårdkodade modellnamn. System.Devices.Aep.Category
+        /// (WinRT) är primär källa; namnheuristiken är endast en generisk fallback för
+        /// enheter som inte rapporterar kategori.
+        /// </summary>
+        private string GuessCategory(DeviceInformation di)
         {
-            string n = name.ToLower();
-            if (n.Contains("s25") || n.Contains("phone") || n.Contains("galaxy")) return "Phone";
-            if (n.Contains("wh-") || n.Contains("airpod") || n.Contains("head") || n.Contains("bud")) return "Audio";
+            if (di.Properties.TryGetValue("System.Devices.Aep.Category", out var category))
+            {
+                if (category is string[] cats && cats.Length > 0) return cats[0].Split('.').Last();
+                if (category is string cat && cat.Length > 0) return cat.Split('.').Last();
+            }
+
+            string n = di.Name.ToLowerInvariant();
+            if (n.Contains("phone") || n.Contains("galaxy") || n.Contains("iphone") || n.Contains("pixel")) return "Phone";
+            if (n.Contains("head") || n.Contains("buds") || n.Contains("earbuds") || n.Contains("airpod") || n.Contains("wh-")) return "Audio";
             return "Other";
         }
 
         private async Task FetchDetailsAsync(string id)
         {
-            try {
+            try
+            {
                 var di = await DeviceInformation.CreateFromIdAsync(id, new[] { "System.Devices.Aep.Category", "System.Devices.Aep.Bluetooth.BatteryLevel", "{104E0000-B531-4F39-8C00-2053070759E0} 2", "{6196DF38-F020-410E-8F14-88A9620E83F0} 8" });
                 if (di == null) return;
 
                 var model = CreateSimpleModel(di, true);
-                if (di.Properties.TryGetValue("System.Devices.Aep.Category", out var category)) {
+                if (di.Properties.TryGetValue("System.Devices.Aep.Category", out var category))
+                {
                     if (category is string[] cats && cats.Length > 0) model.Category = cats[0].Split('.').Last();
                     else if (category is string cat) model.Category = cat.Split('.').Last();
                 }
@@ -219,16 +267,23 @@ namespace BluetoothSafetyLock
                 if (model.Id == _targetDeviceId && model.BatteryLevel.HasValue)
                     MonitoredBatteryLevel = model.BatteryLevel;
 
-                if (model.BatteryLevel == null) {
-                    using (var leDevice = await BluetoothLEDevice.FromIdAsync(id)) {
-                        if (leDevice != null) {
+                if (model.BatteryLevel == null)
+                {
+                    using (var leDevice = await BluetoothLEDevice.FromIdAsync(id))
+                    {
+                        if (leDevice != null)
+                        {
                             var services = await leDevice.GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Uncached);
-                            if (services.Status == GattCommunicationStatus.Success) {
-                                foreach (var service in services.Services) {
+                            if (services.Status == GattCommunicationStatus.Success)
+                            {
+                                foreach (var service in services.Services)
+                                {
                                     var chars = await service.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.BatteryLevel, BluetoothCacheMode.Uncached);
-                                    if (chars.Status == GattCommunicationStatus.Success && chars.Characteristics.Count > 0) {
+                                    if (chars.Status == GattCommunicationStatus.Success && chars.Characteristics.Count > 0)
+                                    {
                                         var res = await chars.Characteristics[0].ReadValueAsync(BluetoothCacheMode.Uncached);
-                                        if (res.Status == GattCommunicationStatus.Success) {
+                                        if (res.Status == GattCommunicationStatus.Success)
+                                        {
                                             model.BatteryLevel = Windows.Storage.Streams.DataReader.FromBuffer(res.Value).ReadByte();
                                             if (model.Id == _targetDeviceId)
                                                 MonitoredBatteryLevel = model.BatteryLevel;
@@ -240,34 +295,62 @@ namespace BluetoothSafetyLock
                         }
                     }
                 }
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"FetchDetailsAsync failed for a discovered device. {ex.Message}");
+            }
         }
 
         public void StopDiscovery()
         {
-            if (_deviceDiscoveryWatcher != null) {
-                try {
+            if (_deviceDiscoveryWatcher != null)
+            {
+                try
+                {
                     _deviceDiscoveryWatcher.Added -= OnDiscoveryAdded;
                     _deviceDiscoveryWatcher.Updated -= OnDiscoveryUpdated;
                     _deviceDiscoveryWatcher.Stop();
-                } catch { }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"StopDiscovery failed. {ex.Message}");
+                }
                 _deviceDiscoveryWatcher = null;
             }
         }
 
         public async Task<bool> PairDeviceAsync(string deviceId)
         {
-            try {
+            try
+            {
                 var di = await DeviceInformation.CreateFromIdAsync(deviceId);
                 di.Pairing.Custom.PairingRequested += (s, args) => args.Accept();
                 var result = await di.Pairing.Custom.PairAsync(DevicePairingKinds.ConfirmOnly | DevicePairingKinds.DisplayPin | DevicePairingKinds.ConfirmPinMatch | DevicePairingKinds.ProvidePin);
+                if (result.Status != DevicePairingResultStatus.Paired && result.Status != DevicePairingResultStatus.AlreadyPaired)
+                    Logger.Warn($"Pairing failed with status {result.Status}.");
                 return result.Status == DevicePairingResultStatus.Paired || result.Status == DevicePairingResultStatus.AlreadyPaired;
-            } catch { return false; }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("PairDeviceAsync failed.", ex);
+                return false;
+            }
         }
 
         public async Task<bool> UnpairDeviceAsync(string deviceId)
         {
-            try { var di = await DeviceInformation.CreateFromIdAsync(deviceId); var result = await di.Pairing.UnpairAsync(); return result.Status == DeviceUnpairingResultStatus.Unpaired; } catch { return false; }
+            try
+            {
+                var di = await DeviceInformation.CreateFromIdAsync(deviceId);
+                var result = await di.Pairing.UnpairAsync();
+                return result.Status == DeviceUnpairingResultStatus.Unpaired;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("UnpairDeviceAsync failed.", ex);
+                return false;
+            }
         }
 
         public async Task StartMonitoringAsync(string deviceId)
@@ -278,18 +361,31 @@ namespace BluetoothSafetyLock
             StopMonitoring();
 
             // Hämta BT-adress via klassisk BT
-            try {
+            try
+            {
                 _monitoredClassicDevice = await BluetoothDevice.FromIdAsync(deviceId);
                 if (_monitoredClassicDevice != null)
                     _targetBluetoothAddress = _monitoredClassicDevice.BluetoothAddress;
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Could not open device as classic Bluetooth. {ex.Message}");
+            }
 
             // Hämta BT-adress via BLE om klassisk misslyckades
-            try {
+            try
+            {
                 _monitoredLeDevice = await BluetoothLEDevice.FromIdAsync(deviceId);
                 if (_monitoredLeDevice != null && _targetBluetoothAddress == 0)
                     _targetBluetoothAddress = _monitoredLeDevice.BluetoothAddress;
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Could not open device as BLE. {ex.Message}");
+            }
+
+            if (_monitoredClassicDevice == null && _monitoredLeDevice == null)
+                Logger.Error($"Could not open the selected device via any Bluetooth profile (id masked, starts with '{deviceId.Substring(0, Math.Min(8, deviceId.Length))}…').");
 
             AttachConnectionStatusHandlers();
             StartConnectionWatcher();
@@ -310,32 +406,45 @@ namespace BluetoothSafetyLock
         private void OnConnectionWatcherAdded(DeviceWatcher s, DeviceInformation di)
         {
             _ = Task.Run(async () => {
-                try {
+                try
+                {
                     if (!await IsUpdateForTargetDeviceAsync(di.Id)) return;
-                    if (di.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val)) {
+                    if (di.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val))
+                    {
                         bool connected = val is bool b && b;
                         NotifyConnectionState(connected);
                     }
-                } catch { }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"OnConnectionWatcherAdded failed. {ex.Message}");
+                }
             });
         }
 
         private void OnConnectionWatcherUpdated(DeviceWatcher s, DeviceInformationUpdate update)
         {
             _ = Task.Run(async () => {
-                try {
+                try
+                {
                     if (!await IsUpdateForTargetDeviceAsync(update.Id)) return;
-                    if (update.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val)) {
+                    if (update.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val))
+                    {
                         bool connected = val is bool b && b;
                         NotifyConnectionState(connected);
                     }
-                } catch { }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"OnConnectionWatcherUpdated failed. {ex.Message}");
+                }
             });
         }
 
         private void StartConnectionWatcher()
         {
-            try {
+            try
+            {
                 string aqs = "(System.Devices.Aep.ProtocolId:=\"{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}\" OR " +
                              "System.Devices.Aep.ProtocolId:=\"{bb7bb58e-4e49-42f4-88af-48f1ea746d46}\") AND " +
                              "System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True";
@@ -347,26 +456,35 @@ namespace BluetoothSafetyLock
                 _connectionWatcher.Updated += OnConnectionWatcherUpdated;
 
                 _connectionWatcher.Start();
-            } catch {
+            }
+            catch (Exception ex)
+            {
+                // Poll-timern fungerar som fallback om watchern inte kan startas.
+                Logger.Error("StartConnectionWatcher failed; relying on polling fallback.", ex);
             }
         }
 
         private async Task QueryInitialConnectionStateAsync()
         {
             if (string.IsNullOrEmpty(_targetDeviceId)) return;
-            try {
-                if (_monitoredLeDevice != null || _monitoredClassicDevice != null) {
-                    PublishNativeConnectionState();
-                    return;
-                }
-            } catch { }
-            try {
+            if (_monitoredLeDevice != null || _monitoredClassicDevice != null)
+            {
+                PublishNativeConnectionState();
+                return;
+            }
+            try
+            {
                 var di = await DeviceInformation.CreateFromIdAsync(_targetDeviceId, new[] { "System.Devices.Aep.IsConnected" });
-                if (di.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val)) {
+                if (di.Properties.TryGetValue("System.Devices.Aep.IsConnected", out var val))
+                {
                     bool connected = val is bool b && b;
                     NotifyConnectionState(connected);
                 }
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"QueryInitialConnectionStateAsync failed. {ex.Message}");
+            }
         }
 
         private void StartBatteryRefreshTimer()
@@ -380,23 +498,29 @@ namespace BluetoothSafetyLock
         private void StopBatteryRefreshTimer()
         {
             if (_batteryRefreshTimer == null) return;
-            try { _batteryRefreshTimer.Stop(); } catch { }
-            _batteryRefreshTimer.Dispose();
+            try { _batteryRefreshTimer.Stop(); _batteryRefreshTimer.Dispose(); }
+            catch (Exception ex) { Logger.Warn($"StopBatteryRefreshTimer failed. {ex.Message}"); }
             _batteryRefreshTimer = null;
         }
 
         private async Task RefreshMonitoredBatteryAsync()
         {
             if (string.IsNullOrEmpty(_targetDeviceId)) return;
-            try {
+            try
+            {
                 await ReadBatteryForDeviceIdAsync(_targetDeviceId);
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Battery refresh failed. {ex.Message}");
+            }
         }
 
         private async Task ReadBatteryForDeviceIdAsync(string id)
         {
             byte? level = null;
-            try {
+            try
+            {
                 var di = await DeviceInformation.CreateFromIdAsync(id, new[] {
                     "System.Devices.Aep.Bluetooth.BatteryLevel",
                     "{104E0000-B531-4F39-8C00-2053070759E0} 2",
@@ -409,27 +533,42 @@ namespace BluetoothSafetyLock
                 if (batVal != null)
                     level = (byte)Convert.ToInt32(batVal);
 
-                if (!level.HasValue) {
+                if (!level.HasValue)
+                {
                     var leDevice = await BluetoothLEDevice.FromIdAsync(id);
-                    if (leDevice != null) {
-                        var services = await leDevice.GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Uncached);
-                        if (services.Status == GattCommunicationStatus.Success) {
-                            foreach (var service in services.Services) {
-                                var chars = await service.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.BatteryLevel, BluetoothCacheMode.Uncached);
-                                if (chars.Status == GattCommunicationStatus.Success && chars.Characteristics.Count > 0) {
-                                    var res = await chars.Characteristics[0].ReadValueAsync(BluetoothCacheMode.Uncached);
-                                    if (res.Status == GattCommunicationStatus.Success) {
-                                        level = Windows.Storage.Streams.DataReader.FromBuffer(res.Value).ReadByte();
-                                        break;
+                    if (leDevice != null)
+                    {
+                        try
+                        {
+                            var services = await leDevice.GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Uncached);
+                            if (services.Status == GattCommunicationStatus.Success)
+                            {
+                                foreach (var service in services.Services)
+                                {
+                                    var chars = await service.GetCharacteristicsForUuidAsync(GattCharacteristicUuids.BatteryLevel, BluetoothCacheMode.Uncached);
+                                    if (chars.Status == GattCommunicationStatus.Success && chars.Characteristics.Count > 0)
+                                    {
+                                        var res = await chars.Characteristics[0].ReadValueAsync(BluetoothCacheMode.Uncached);
+                                        if (res.Status == GattCommunicationStatus.Success)
+                                        {
+                                            level = Windows.Storage.Streams.DataReader.FromBuffer(res.Value).ReadByte();
+                                            break;
+                                        }
                                     }
                                 }
                             }
                         }
+                        finally { leDevice.Dispose(); }
                     }
                 }
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"ReadBatteryForDeviceIdAsync failed. {ex.Message}");
+            }
 
-            if (level.HasValue && (MonitoredBatteryLevel != level || !MonitoredBatteryLevel.HasValue)) {
+            if (level.HasValue && (MonitoredBatteryLevel != level || !MonitoredBatteryLevel.HasValue))
+            {
                 MonitoredBatteryLevel = level;
                 MonitoredBatteryChanged?.Invoke();
             }
@@ -441,24 +580,33 @@ namespace BluetoothSafetyLock
             StopConnectionPollTimer();
             DetachConnectionStatusHandlers();
             _targetEndpointIdCache.Clear();
-            if (_monitoredLeDevice != null) { 
-                try { _monitoredLeDevice.Dispose(); } catch { }
-                _monitoredLeDevice = null; 
+            if (_monitoredLeDevice != null)
+            {
+                try { _monitoredLeDevice.Dispose(); }
+                catch (Exception ex) { Logger.Warn($"Disposing BLE device object failed. {ex.Message}"); }
+                _monitoredLeDevice = null;
             }
-            if (_monitoredClassicDevice != null) { 
-                try { _monitoredClassicDevice.Dispose(); } catch { }
-                _monitoredClassicDevice = null; 
+            if (_monitoredClassicDevice != null)
+            {
+                try { _monitoredClassicDevice.Dispose(); }
+                catch (Exception ex) { Logger.Warn($"Disposing classic device object failed. {ex.Message}"); }
+                _monitoredClassicDevice = null;
             }
-            if (_watcher != null) { 
-                try { _watcher.Stop(); } catch { }
-                _watcher = null; 
+            if (_watcher != null)
+            {
+                try { _watcher.Stop(); }
+                catch (Exception ex) { Logger.Warn($"Stopping advertisement watcher failed. {ex.Message}"); }
+                _watcher = null;
             }
-            if (_connectionWatcher != null) {
-                try {
+            if (_connectionWatcher != null)
+            {
+                try
+                {
                     _connectionWatcher.Added -= OnConnectionWatcherAdded;
                     _connectionWatcher.Updated -= OnConnectionWatcherUpdated;
-                    _connectionWatcher.Stop(); 
-                } catch { }
+                    _connectionWatcher.Stop();
+                }
+                catch (Exception ex) { Logger.Warn($"Stopping connection watcher failed. {ex.Message}"); }
                 _connectionWatcher = null;
             }
         }
