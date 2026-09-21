@@ -68,10 +68,6 @@ Copyright (c) 2026 nRn World
 
 ---
 
-*Created with ❤️ by **nRn World***
-
----
-
 ☕ **Support development**: [Buy me a coffee 💜](https://ko-fi.com/nrnworld)
 
 Created by ❤️ © nRn World
