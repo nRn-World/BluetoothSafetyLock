@@ -29,7 +29,7 @@ Personalize the experience with Light, Dark, and Auto themes, and fine-tune the 
 ## ✨ Key Features
 
 - **Real-time Signal Tracking**: Visual graph showing the RSSI (signal strength) of your monitored device.
-- **Smart Proximity Locking**: Automatically locks your PC when the signal drops below your custom threshold.
+- **Connection-Based Locking**: Locking only arms after Windows confirms an active Bluetooth connection to your paired device. Devices that merely broadcast a signal nearby — like a neighbour's phone — can never trigger a lock.
 - **Grace Period**: Prevent accidental locks with a configurable waiting period.
 - **Filtered Signal**: Raw Bluetooth signal is smoothed and hysteresis is applied, so the app doesn't lock on normal signal jitter.
 - **Persistent Settings**: All your settings and your selected device are saved locally and restored automatically at next start. No cloud, no accounts, no telemetry — everything stays on your machine.

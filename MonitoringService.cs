@@ -37,11 +37,6 @@ namespace BluetoothSafetyLock
         public bool IsClearClipboardEnabled { get; set; } = true;
         public bool IsPlayWarningEnabled { get; set; } = false;
 
-        /// <summary>
-        /// True efter Windows IsConnected (-50) eller efter tillräckligt många BLE-RSSI-uppdateringar (telefonen syns i luften).
-        /// Många mobiler rapporterar aldrig IsConnected=true mot PC; då räcker närvaro via annonser.
-        /// </summary>
-        private const int RealRssiSamplesRequired = 2;
         /// <summary>Vänta 10 sekunder efter start innan vi ens kollar efter frånkoppling.</summary>
         private const double MinSecondsBeforeAnyLock = 10.0;
         /// <summary>Vid enbart BLE-annonser, vänta 20 sekunder efter start innan vi tillåter låsning vid tystnad.</summary>
@@ -168,7 +163,8 @@ namespace BluetoothSafetyLock
                 return;
             }
 
-            // REAL BLE RSSI
+            // REAL BLE RSSI — used for the graph and threshold only. It can NEVER arm
+            // locking on its own: only a confirmed Windows connection (pairing) may do that (v1.1.1-fix).
             short smoothed;
             lock (_stateLock)
             {
@@ -180,8 +176,6 @@ namespace BluetoothSafetyLock
 
                 LastUpdateReceived = DateTime.Now;
                 _realRssiSamples++;
-                if (_realRssiSamples >= RealRssiSamplesRequired)
-                    _hasConfirmedConnection = true;
             }
 
             // Reset strikes if signal is good — threshold itself cancels pending locks.
@@ -271,6 +265,8 @@ namespace BluetoothSafetyLock
             {
                 _monitoringStartTime = DateTime.Now;
                 _realRssiSamples = 0;
+                // v1.1.1-fix: arming requires a confirmed Windows connection (pairing).
+                // Bluetooth signals in the air are never sufficient on their own.
                 _hasConfirmedConnection = false;
                 _pendingLock = false;
                 _violationStrikes = 0;
