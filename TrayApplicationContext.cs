@@ -10,6 +10,10 @@ namespace BluetoothSafetyLock
         private readonly BluetoothManager _bluetoothManager;
         private readonly MonitoringService _monitoringService;
         private readonly System.Timers.Timer _statusTimer;
+        private readonly System.Timers.Timer _updateCheckTimer;
+        private System.Windows.Forms.Timer? _autoCheckStartupTimer;
+        /// <summary>Shown in the tray menu only while an update is downloaded and waiting.</summary>
+        private ToolStripMenuItem? _updatePendingMenuItem;
         /// <summary>App icon instance owned by this class; released in Exit().</summary>
         private Icon? _appIcon;
 
@@ -65,6 +69,22 @@ namespace BluetoothSafetyLock
                 _monitoringService.MonitoredDeviceName = s.SelectedDeviceName;
                 _ = ResumeMonitoringAsync(s.SelectedDeviceId);
             }
+
+            // Auto-updater (Doggy Player flow): check shortly after launch, then every 6 h.
+            // The check itself respects the IsAutoUpdateEnabled toggle in Settings.
+            _updateCheckTimer = new System.Timers.Timer(TimeSpan.FromHours(6).TotalMilliseconds);
+            _updateCheckTimer.Elapsed += (s, e) => RunAutoUpdateCheck();
+            _updateCheckTimer.Start();
+
+            _autoCheckStartupTimer = new System.Windows.Forms.Timer { Interval = 8000 };
+            _autoCheckStartupTimer.Tick += (s2, e2) =>
+            {
+                _autoCheckStartupTimer?.Stop();
+                _autoCheckStartupTimer?.Dispose();
+                _autoCheckStartupTimer = null;
+                RunAutoUpdateCheck();
+            };
+            _autoCheckStartupTimer.Start();
         }
 
         private async Task ResumeMonitoringAsync(string deviceId)
@@ -86,6 +106,20 @@ namespace BluetoothSafetyLock
 
             menu.Items.Add("Settings", null, ShowSettings);
             menu.Items.Add("Snooze (5m)", null, (s, e) => Snooze(5));
+            menu.Items.Add("-");
+            menu.Items.Add("Check for updates", null, (s, e) => _ = CheckForUpdatesInternalAsync(autoTriggered: false));
+
+            // Visible only when an update is staged and ready (refreshed on every open).
+            _updatePendingMenuItem = new ToolStripMenuItem("Install update & restart", null,
+                (s, e) => InstallPendingUpdateNow())
+            { Visible = UpdaterService.HasStagedUpdate };
+            menu.Items.Add(_updatePendingMenuItem);
+            menu.Opening += (s, e) =>
+            {
+                if (_updatePendingMenuItem != null)
+                    _updatePendingMenuItem.Visible = UpdaterService.HasStagedUpdate;
+            };
+
             menu.Items.Add("-");
             menu.Items.Add("Exit", null, (s, e) => Exit());
 
@@ -197,8 +231,119 @@ namespace BluetoothSafetyLock
             _appIcon = null;
             _statusTimer.Stop();
             _statusTimer.Dispose();
+            _updateCheckTimer.Stop();
+            _updateCheckTimer.Dispose();
+            if (_autoCheckStartupTimer != null)
+            {
+                _autoCheckStartupTimer.Stop();
+                _autoCheckStartupTimer.Dispose();
+                _autoCheckStartupTimer = null;
+            }
             _monitoringService.Dispose();
             Application.Exit();
+        }
+
+        // ─────────────────────────── Auto-updater ───────────────────────────
+
+        /// <summary>Periodic/auto path: staged-update balloon first, then a network check when enabled.</summary>
+        private void RunAutoUpdateCheck()
+        {
+            try
+            {
+                // A staged update waiting from a previous session always deserves a balloon,
+                // even when further network checks are switched off.
+                if (ShowPendingUpdateBalloonIfNeeded()) return;
+
+                if (!SettingsStore.Current.IsAutoUpdateEnabled) return;
+
+                _ = CheckForUpdatesInternalAsync(autoTriggered: true);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Auto update check failed. {ex.Message}");
+            }
+        }
+
+        /// <summary>Shows a balloon when an update is staged and waiting; returns true when shown.</summary>
+        private bool ShowPendingUpdateBalloonIfNeeded()
+        {
+            var pending = UpdaterService.PendingVersion;
+            if (pending == null) return false;
+
+            ShowBalloon(
+                ToolTipIcon.Info,
+                "Update ready to install",
+                $"BluetoothSafetyLock {pending} is downloaded. Right-click the tray icon and choose \"Install update & restart\" — or it installs automatically next time you start the app.");
+            return true;
+        }
+
+        /// <summary>
+        /// Shared check path for the tray menu ("Check for updates") and the
+        /// automatic timer. Downloads and stages the update in the background;
+        /// the UI stays fully usable. Errors land in the log and (manual checks only)
+        /// as balloons.
+        /// </summary>
+        private async Task CheckForUpdatesInternalAsync(bool autoTriggered)
+        {
+            try
+            {
+                if (UpdaterService.HasStagedUpdate)
+                {
+                    ShowPendingUpdateBalloonIfNeeded();
+                    return;
+                }
+
+                var update = await UpdaterService.CheckForUpdateAsync();
+                if (update == null)
+                {
+                    if (!autoTriggered)
+                        ShowBalloon(ToolTipIcon.Info, "You're up to date",
+                            $"BluetoothSafetyLock {UpdaterService.CurrentVersion} is the latest version.");
+                    return;
+                }
+
+                ShowBalloon(ToolTipIcon.Info, "Update available",
+                    $"Downloading BluetoothSafetyLock {update.Value.Version}… You can keep working; it installs on restart.");
+
+                string staged = await UpdaterService.DownloadAndStageAsync(update.Value.AssetUrl);
+                Logger.Info($"Update {update.Value.Version} staged at '{staged}'.");
+
+                ShowBalloon(ToolTipIcon.Info, "Update ready to install",
+                    $"BluetoothSafetyLock {update.Value.Version} is downloaded. Right-click the tray icon and choose \"Install update & restart\" — or it installs automatically next time you start the app.");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Update check/download failed.", ex);
+                if (!autoTriggered)
+                    ShowBalloon(ToolTipIcon.Warning, "Update failed",
+                        "The update could not be downloaded. Check your internet connection and try again.");
+            }
+        }
+
+        /// <summary>Swaps in the staged update and starts the new version.</summary>
+        private void InstallPendingUpdateNow()
+        {
+            if (!UpdaterService.HasStagedUpdate) return;
+
+            Logger.Info("User requested install-and-restart from the tray menu.");
+            UpdaterService.RestartToInstall();
+            Exit();
+        }
+
+        private void ShowBalloon(ToolTipIcon icon, string title, string text)
+        {
+            try
+            {
+                _notifyIcon.BalloonTipIcon = icon;
+                _notifyIcon.BalloonTipTitle = title;
+                _notifyIcon.BalloonTipText = text;
+                _notifyIcon.ShowBalloonTip(6000);
+            }
+            catch (Exception ex)
+            {
+                // Notifications must never take the app down.
+                Logger.Warn($"Balloon notification failed. {ex.Message}");
+            }
         }
     }
 }

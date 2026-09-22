@@ -19,6 +19,8 @@ namespace BluetoothSafetyLock
         public string SelectedDeviceId { get; set; } = string.Empty;
         public string SelectedDeviceName { get; set; } = "None";
         public string AppearanceTheme { get; set; } = "Auto";
+        /// <summary>Automatic update checks against GitHub Releases (the app's only network traffic).</summary>
+        public bool IsAutoUpdateEnabled { get; set; } = true;
     }
 
     public static class SettingsStore

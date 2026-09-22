@@ -34,6 +34,7 @@ Personalize the experience with Light, Dark, and Auto themes, and fine-tune the 
 - **Filtered Signal**: Raw Bluetooth signal is smoothed and hysteresis is applied, so the app doesn't lock on normal signal jitter.
 - **Persistent Settings**: All your settings and your selected device are saved locally and restored automatically at next start. No cloud, no accounts, no telemetry — everything stays on your machine.
 - **Single Instance**: Only one copy of the app can run at a time, so it never double-locks or double-polls.
+- **Built-in Auto-Updates**: The app checks GitHub Releases for new versions (shortly after launch and every 6 hours), downloads them in the background and installs them on the next start — with balloon notifications and an on-demand "Check for updates" option. Can be switched off in Settings.
 - **Wake Screen on Approach**: Wakes your screen when you return so you can log back in quickly. (Windows does not allow apps to unlock a locked session — you always authenticate yourself. This is by design in the operating system.)
 - **Clipboard Security**: Automatically clears your clipboard upon locking for extra privacy.
 - **Modern UI**: A beautiful, high-performance interface with support for Light and Dark modes.
@@ -53,7 +54,7 @@ Personalize the experience with Light, Dark, and Auto themes, and fine-tune the 
 
 ### 📁 Where are my settings stored?
 
-All settings are stored locally in `%APPDATA%\BluetoothSafetyLock\settings.json`, and logs in `%APPDATA%\BluetoothSafetyLock\logs\`. The app makes no network connections other than to the Bluetooth devices you monitor.
+All settings are stored locally in `%APPDATA%\BluetoothSafetyLock\settings.json`, and logs in `%APPDATA%\BluetoothSafetyLock\logs\`. The app makes no network connections other than the optional update check against GitHub Releases and the Bluetooth devices you monitor.
 
 ---
 

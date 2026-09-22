@@ -22,6 +22,12 @@ namespace BluetoothSafetyLock
         private bool _playWarning = false;
         private bool _launchAtStartup = true;
         private string _appearanceTheme = "Auto"; // Light, Dark, Auto
+        private bool _autoUpdate = true;
+        private string _updateStatusText = string.Empty;
+
+        // Settings page hit targets (shared between paint and click handling)
+        private static readonly Rectangle AutoUpdateToggleRect = new(860, 895, 60, 30);
+        private static readonly Rectangle CheckNowButtonRect = new(820, 1160, 90, 35);
         private Image? _logoLight;
         private Image? _logoDark;
         private int _settingsScrollY = 0;
@@ -65,6 +71,7 @@ namespace BluetoothSafetyLock
 
             // FAS 1.1: restore persisted theme.
             _appearanceTheme = SettingsStore.Current.AppearanceTheme;
+            _autoUpdate = SettingsStore.Current.IsAutoUpdateEnabled;
 
             this.Text = "Bluetooth SafetyLock";
             this.Size = new Size(1000, 700);
@@ -115,7 +122,7 @@ namespace BluetoothSafetyLock
         private void OnMainDashboardMouseWheel(object? sender, MouseEventArgs e)
         {
             if (_activeView == "Settings") {
-                _settingsScrollY = Math.Clamp(_settingsScrollY - (e.Delta / 2), 0, 300);
+                _settingsScrollY = Math.Clamp(_settingsScrollY - (e.Delta / 2), 0, 500);
                 this.Invalidate();
             }
         }
@@ -181,6 +188,7 @@ namespace BluetoothSafetyLock
             s.IsClearClipboardEnabled = _monitoringService.IsClearClipboardEnabled;
             s.IsPlayWarningEnabled = _monitoringService.IsPlayWarningEnabled;
             s.AppearanceTheme = _appearanceTheme;
+            s.IsAutoUpdateEnabled = _autoUpdate;
             s.SelectedDeviceId = _bluetoothManager.MonitoredDeviceId ?? string.Empty;
             s.SelectedDeviceName = _monitoringService.MonitoredDeviceName;
             SettingsStore.SaveCurrent();
@@ -191,6 +199,43 @@ namespace BluetoothSafetyLock
             if (_bluetoothManager.MonitoredDeviceId == null) return;
             await _monitoringService.StartMonitoringAsync(_bluetoothManager.MonitoredDeviceId);
             SaveSettings();
+        }
+
+        /// <summary>Dashboard-triggered update check; status is shown inline on the Settings page.</summary>
+        private async Task CheckForUpdatesFromDashboardAsync()
+        {
+            try
+            {
+                if (UpdaterService.HasStagedUpdate)
+                {
+                    _updateStatusText = $"Update {UpdaterService.PendingVersion} is ready — restart the app to install.";
+                    this.Invalidate();
+                    return;
+                }
+
+                _updateStatusText = "Checking for updates…";
+                this.Invalidate();
+
+                var update = await UpdaterService.CheckForUpdateAsync();
+                if (update == null)
+                {
+                    _updateStatusText = $"You are up to date ({UpdaterService.CurrentVersion}).";
+                }
+                else
+                {
+                    _updateStatusText = $"Downloading {update.Value.Version}…";
+                    this.Invalidate();
+
+                    await UpdaterService.DownloadAndStageAsync(update.Value.AssetUrl);
+                    _updateStatusText = $"Update {update.Value.Version} downloaded — restart to install.";
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Manual update check from dashboard failed.", ex);
+                _updateStatusText = "Update check failed — check your internet connection and try again.";
+            }
+            this.Invalidate();
         }
 
         protected override void OnClosed(EventArgs e)
@@ -317,6 +362,19 @@ namespace BluetoothSafetyLock
                 {
                     float pct = Math.Clamp((float)(e.X - graceRect.Left) / graceRect.Width, 0, 1);
                     _monitoringService.GracePeriodSeconds = (int)(pct * 30);
+                }
+
+                // Updates toggle (Y: 895)
+                if (AutoUpdateToggleRect.Contains(e.X, curY) && e.Button == MouseButtons.Left)
+                {
+                    _autoUpdate = !_autoUpdate;
+                    SaveSettings();
+                }
+
+                // Check-now button (Y: 1160)
+                if (CheckNowButtonRect.Contains(e.X, curY) && e.Button == MouseButtons.Left)
+                {
+                    _ = CheckForUpdatesFromDashboardAsync();
                 }
 
                 this.Invalidate();
@@ -799,6 +857,45 @@ namespace BluetoothSafetyLock
 
                 // Slider
                 DrawCustomSlider(g, 330, 770, 580, _monitoringService.GracePeriodSeconds / 30f, "Instant (0s)", "30s");
+
+                // 4. Updates Card
+                var cardUpdates = new Rectangle(300, 850, 640, 190);
+                FillRoundedRect(g, CardColor, cardUpdates, 12);
+                g.DrawString("Updates", new Font("Segoe UI", 13, FontStyle.Bold), primaryBrush, 330, 885);
+                g.DrawString("Check automatically for new versions on GitHub. The only network traffic the app performs.", new Font("Segoe UI", 10), secondaryBrush, new RectangleF(330, 925, 500, 40));
+                DrawToggle(g, AutoUpdateToggleRect.X, AutoUpdateToggleRect.Y, _autoUpdate);
+
+                // 5. Updater Status Card (live status of the built-in updater)
+                var cardUpdStatus = new Rectangle(300, 1060, 640, 190);
+                FillRoundedRect(g, CardColor, cardUpdStatus, 12);
+                g.DrawString("Software Updates", new Font("Segoe UI", 13, FontStyle.Bold), primaryBrush, 330, 1095);
+
+                string statusText;
+                Color statusColor;
+                if (UpdaterService.HasStagedUpdate)
+                {
+                    statusText = $"Update {UpdaterService.PendingVersion} is downloaded and ready. Restart BluetoothSafetyLock to install it — or use \"Install update & restart\" in the tray menu.";
+                    statusColor = Color.DodgerBlue;
+                }
+                else
+                {
+                    statusText = $"You are running BluetoothSafetyLock {UpdaterService.CurrentVersion}. New GitHub releases are installed automatically when Updates are enabled.";
+                    statusColor = secondaryBrush.Color;
+                }
+                using (var statusBrush = new SolidBrush(statusColor))
+                {
+                    g.DrawString(statusText, new Font("Segoe UI", 10), statusBrush, new RectangleF(330, 1140, 470, 70));
+                }
+
+                if (!string.IsNullOrEmpty(_updateStatusText))
+                {
+                    using var lastBrush = new SolidBrush(secondaryBrush.Color);
+                    g.DrawString(_updateStatusText, new Font("Segoe UI", 9, FontStyle.Italic), lastBrush, new RectangleF(330, 1210, 470, 30));
+                }
+
+                bool hoverCheck = CheckNowButtonRect.Contains(_mouseLocation);
+                FillRoundedRect(g, hoverCheck ? Color.FromArgb(110, 165, 255) : Color.DodgerBlue, CheckNowButtonRect, 8);
+                g.DrawString("Check now", new Font("Segoe UI", 9, FontStyle.Bold), Brushes.White, CheckNowButtonRect.X + 13, CheckNowButtonRect.Y + 8);
             }
         }
 

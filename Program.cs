@@ -14,6 +14,13 @@ internal static class Program
     [STAThread]
     static void Main()
     {
+        // Auto-updater: apply a staged update BEFORE the mutex and anything else.
+        // If one was applied, a fresh process with the new version was started.
+        if (UpdaterService.ApplyPendingInstall())
+        {
+            return;
+        }
+
         // FAS 1.3: single-instance. A second copy must never run: two watchers would
         // double-poll the same device and could lock the workstation in conflict.
         using var mutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out bool createdNew);
