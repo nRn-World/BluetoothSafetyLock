@@ -568,6 +568,7 @@ namespace BluetoothSafetyLock
                 var card1 = new Rectangle(300, 160, 640, 120);
                 FillRoundedRect(g, CardColor, card1, 12);
                 bool isActive = !_monitoringService.IsPaused;
+                bool isConnected = _bluetoothManager.IsDeviceConnected;
                 
                 // Icon Background
                 using (var iconBrush = new SolidBrush(CardInnerColor))
@@ -582,14 +583,18 @@ namespace BluetoothSafetyLock
                     });
                 }
 
-                g.DrawString(isActive ? "Monitoring Active" : "Monitoring Paused", new Font("Segoe UI", 14, FontStyle.Bold), primaryBrush, 395, 195);
-                g.DrawString($"Tracking \"{_monitoringService.MonitoredDeviceName}\"", new Font("Segoe UI", 10), secondaryBrush, 395, 225);
+                g.DrawString(isActive ? (isConnected ? "Monitoring Active" : "Waiting for connection") : "Monitoring Paused", new Font("Segoe UI", 14, FontStyle.Bold), primaryBrush, 395, 195);
+                string connectionNote = isConnected
+                    ? "Connected — locking armed"
+                    : "No active connection — your PC will not lock";
+                g.DrawString($"Tracking \"{_monitoringService.MonitoredDeviceName}\" — {connectionNote}", new Font("Segoe UI", 10), secondaryBrush, 395, 225);
                 
                 // Show positive value (e.g. 88 instead of -88)
-                string rssiVal = _monitoringService.CurrentRssi > -110 ? Math.Abs(_monitoringService.CurrentRssi).ToString() : "—";
+                short currentRssi = _monitoringService.CurrentRssi;
+                string rssiVal = isConnected && currentRssi > -110 ? Math.Abs(currentRssi).ToString() : "—";
                 g.DrawString(rssiVal, new Font("Segoe UI", 28, FontStyle.Bold), primaryBrush, 780, 185);
                 g.DrawString("dBm", new Font("Segoe UI", 10, FontStyle.Bold), secondaryBrush, 885, 202);
-                g.DrawString("CURRENT RSSI", new Font("Segoe UI", 8, FontStyle.Bold), new SolidBrush(Color.MediumSpringGreen), 830, 235);
+                g.DrawString(isConnected ? "CURRENT RSSI" : "NO CONNECTION", new Font("Segoe UI", 8, FontStyle.Bold), new SolidBrush(isConnected ? Color.MediumSpringGreen : Color.OrangeRed), 830, 235);
 
                 // Card 2: Live Signal Strength
                 var card2 = new Rectangle(300, 310, 640, 320);
@@ -869,6 +874,16 @@ namespace BluetoothSafetyLock
                 var cardUpdStatus = new Rectangle(300, 1060, 640, 190);
                 FillRoundedRect(g, CardColor, cardUpdStatus, 12);
                 g.DrawString("Software Updates", new Font("Segoe UI", 13, FontStyle.Bold), primaryBrush, 330, 1095);
+
+                // Version badge so users can see at a glance which version they run.
+                var versionBadge = new Rectangle(780, 1092, 130, 30);
+                FillRoundedRect(g, CardInnerColor, versionBadge, 6);
+                string versionText = $"v{UpdaterService.CurrentVersion}";
+                var versionSize = g.MeasureString(versionText, new Font("Segoe UI", 9, FontStyle.Bold));
+                using (var versionBrush = new SolidBrush(secondaryBrush.Color))
+                {
+                    g.DrawString(versionText, new Font("Segoe UI", 9, FontStyle.Bold), versionBrush, versionBadge.X + (versionBadge.Width - versionSize.Width) / 2, versionBadge.Y + 6);
+                }
 
                 string statusText;
                 Color statusColor;
