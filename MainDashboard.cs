@@ -31,6 +31,8 @@ namespace BluetoothSafetyLock
         private Image? _logoLight;
         private Image? _logoDark;
         private int _settingsScrollY = 0;
+        /// <summary>Settings content is ~1300 px tall in a 700 px window — scroll must reach the bottom card (Check-now button + status text), otherwise feedback renders below the fold.</summary>
+        private const int MaxSettingsScroll = 600;
         private bool _isDraggingSlider = false;
         private bool _isDraggingWindow = false;
         private Point _dragStartPoint = Point.Empty;
@@ -122,7 +124,7 @@ namespace BluetoothSafetyLock
         private void OnMainDashboardMouseWheel(object? sender, MouseEventArgs e)
         {
             if (_activeView == "Settings") {
-                _settingsScrollY = Math.Clamp(_settingsScrollY - (e.Delta / 2), 0, 500);
+                _settingsScrollY = Math.Clamp(_settingsScrollY - (e.Delta / 2), 0, MaxSettingsScroll);
                 this.Invalidate();
             }
         }
@@ -206,6 +208,7 @@ namespace BluetoothSafetyLock
         {
             try
             {
+                Logger.Info("Manual update check requested from dashboard.");
                 if (UpdaterService.HasStagedUpdate)
                 {
                     _updateStatusText = $"Update {UpdaterService.PendingVersion} is ready — restart the app to install.";
@@ -374,6 +377,9 @@ namespace BluetoothSafetyLock
                 // Check-now button (Y: 1160)
                 if (CheckNowButtonRect.Contains(e.X, curY) && e.Button == MouseButtons.Left)
                 {
+                    // Jump to the bottom so the live status text ("Checking for updates…"
+                    // etc., drawn at Y 1210) is actually visible while the check runs.
+                    _settingsScrollY = MaxSettingsScroll;
                     _ = CheckForUpdatesFromDashboardAsync();
                 }
 
