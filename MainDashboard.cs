@@ -556,6 +556,17 @@ namespace BluetoothSafetyLock
             }
         }
 
+        /// <summary>Trims text with an ellipsis so it never overflows its allotted pixel width.</summary>
+        private static string TruncateToWidth(Graphics g, string text, Font font, float maxWidth)
+        {
+            if (string.IsNullOrEmpty(text) || g.MeasureString(text, font).Width <= maxWidth) return text;
+            while (text.Length > 1 && g.MeasureString(text + "…", font).Width > maxWidth)
+            {
+                text = text.Substring(0, text.Length - 1);
+            }
+            return text + "…";
+        }
+
         private void DrawStatusPage(Graphics g)
         {
             using (var primaryBrush = new SolidBrush(PrimaryTextColor))
@@ -583,18 +594,56 @@ namespace BluetoothSafetyLock
                     });
                 }
 
+                // Clip everything inside the card so no text can ever spill over its edges.
+                g.SetClip(new Rectangle(card1.X + 1, card1.Y + 1, card1.Width - 2, card1.Height - 2));
+
                 g.DrawString(isActive ? (isConnected ? "Monitoring Active" : "Waiting for connection") : "Monitoring Paused", new Font("Segoe UI", 14, FontStyle.Bold), primaryBrush, 395, 195);
-                string connectionNote = isConnected
-                    ? "Connected — locking armed"
-                    : "No active connection — your PC will not lock";
-                g.DrawString($"Tracking \"{_monitoringService.MonitoredDeviceName}\" — {connectionNote}", new Font("Segoe UI", 10), secondaryBrush, 395, 225);
+
+                // Subtitle split into two short lines: the old single line combined a long
+                // device name with the connection note and collided with the RSSI column.
+                string deviceLabel = $"Tracking \"{_monitoringService.MonitoredDeviceName}\"";
+                using (var infoFont = new Font("Segoe UI", 10))
+                {
+                    g.DrawString(TruncateToWidth(g, deviceLabel, infoFont, 470), infoFont, secondaryBrush, 395, 222);
+                }
+
+                string connectionNote = isActive
+                    ? (isConnected ? "Connected — locking armed" : "No active connection — your PC will not lock")
+                    : "Service paused — monitoring is off";
+                Color noteColor = !isActive ? SecondaryTextColor : (isConnected ? Color.MediumSpringGreen : Color.FromArgb(255, 170, 80));
+                using (var noteFont = new Font("Segoe UI", 9, FontStyle.Bold))
+                using (var noteBrush = new SolidBrush(noteColor))
+                {
+                    g.DrawString(connectionNote, noteFont, noteBrush, 395, 242);
+                }
                 
-                // Show positive value (e.g. 88 instead of -88)
+                // Right column: RSSI value, unit and state label, all right-aligned inside
+                // the card (the old fixed x-positions pushed "NO CONNECTION" past the edge).
                 short currentRssi = _monitoringService.CurrentRssi;
-                string rssiVal = isConnected && currentRssi > -110 ? Math.Abs(currentRssi).ToString() : "—";
-                g.DrawString(rssiVal, new Font("Segoe UI", 28, FontStyle.Bold), primaryBrush, 780, 185);
-                g.DrawString("dBm", new Font("Segoe UI", 10, FontStyle.Bold), secondaryBrush, 885, 202);
-                g.DrawString(isConnected ? "CURRENT RSSI" : "NO CONNECTION", new Font("Segoe UI", 8, FontStyle.Bold), new SolidBrush(isConnected ? Color.MediumSpringGreen : Color.OrangeRed), 830, 235);
+                bool showRssi = isActive && isConnected && currentRssi > -110;
+                string rssiVal = showRssi ? Math.Abs(currentRssi).ToString() : "—";
+
+                using (var rssiFont = new Font("Segoe UI", 28, FontStyle.Bold))
+                using (var unitFont = new Font("Segoe UI", 10, FontStyle.Bold))
+                {
+                    var valSize = g.MeasureString(rssiVal, rssiFont);
+                    g.DrawString(rssiVal, rssiFont, primaryBrush, 868 - valSize.Width, 182);
+                    if (showRssi)
+                    {
+                        g.DrawString("dBm", unitFont, secondaryBrush, 884, 230);
+                    }
+                }
+
+                string stateText = !isActive ? "PAUSED" : (isConnected ? "CURRENT RSSI" : "NO CONNECTION");
+                Color stateColor = !isActive ? SecondaryTextColor : (isConnected ? Color.MediumSpringGreen : Color.OrangeRed);
+                using (var stateFont = new Font("Segoe UI", 8, FontStyle.Bold))
+                using (var stateBrush = new SolidBrush(stateColor))
+                {
+                    var stateSize = g.MeasureString(stateText, stateFont);
+                    g.DrawString(stateText, stateFont, stateBrush, 916 - stateSize.Width, 250);
+                }
+
+                g.ResetClip();
 
                 // Card 2: Live Signal Strength
                 var card2 = new Rectangle(300, 310, 640, 320);
