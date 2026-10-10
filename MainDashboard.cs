@@ -142,8 +142,14 @@ namespace BluetoothSafetyLock
         private void OnMainDashboardMouseDown(object? sender, MouseEventArgs e)
         {
             if (_activeView == "Settings") {
-                _isDraggingSlider = true;
-                HandleSliderDrag(e);
+                int curY = e.Y + _settingsScrollY;
+                var thresholdRect = new Rectangle(330, 540, 580, 40);
+                var graceRect = new Rectangle(330, 760, 580, 40);
+                if (thresholdRect.Contains(e.X, curY) || graceRect.Contains(e.X, curY))
+                {
+                    _isDraggingSlider = true;
+                    HandleSliderDrag(e);
+                }
             }
 
             // Flytta fönster om man klickar i sidebaren eller högst upp
@@ -416,25 +422,44 @@ namespace BluetoothSafetyLock
                 return;
             }
 
-            if (_activeView == "Devices" && new Rectangle(810, 95, 130, 40).Contains(e.Location)) {
-                var selector = new DeviceSelectorForm(_bluetoothManager, _monitoringService);
-                selector.ShowDialog();
-                _bluetoothManager.StartDiscovery();
-            }
-
             if (_activeView == "Devices") {
-                int clickY = 200;
+                if (new Rectangle(770, 95, 170, 45).Contains(e.Location)) {
+                    var selector = new DeviceSelectorForm(_bluetoothManager, _monitoringService);
+                    selector.ShowDialog();
+                    _bluetoothManager.StartDiscovery();
+                    return;
+                }
+
+                int devY = 180;
+                int itemHeight = 110;
                 for (int i = 0; i < _pairedDevices.Count; i++) {
-                    if (new Rectangle(880, clickY + 20, 50, 50).Contains(e.Location)) {
-                        var dev = _pairedDevices[i];
+                    var dev = _pairedDevices[i];
+                    var trashRect = new Rectangle(890, devY + 25, 40, 50);
+                    if (trashRect.Contains(e.Location)) {
                         if (MessageBox.Show($"Unpair {dev.Name}?", "Confirm", MessageBoxButtons.YesNo) == DialogResult.Yes) {
                             await _bluetoothManager.UnpairDeviceAsync(dev.Id);
                             _pairedDevices.RemoveAt(i);
+                            if (_bluetoothManager.MonitoredDeviceId == dev.Id)
+                            {
+                                _monitoringService.StopMonitoring();
+                                _monitoringService.IsPaused = true;
+                            }
+                            SaveSettings();
                             this.Invalidate();
                         }
                         return;
                     }
-                    clickY += 115;
+
+                    var rowRect = new Rectangle(300, devY, 580, itemHeight);
+                    if (rowRect.Contains(e.Location)) {
+                        _monitoringService.MonitoredDeviceName = dev.Name;
+                        await _monitoringService.StartMonitoringAsync(dev.Id);
+                        SaveSettings();
+                        this.Invalidate();
+                        return;
+                    }
+
+                    devY += itemHeight;
                 }
             }
 

@@ -157,6 +157,11 @@ namespace BluetoothSafetyLock
             {
                 if (!_monitoringService.IsPaused)
                 {
+                    if (!_monitoringService.IsLocked && _appIcon != null)
+                    {
+                        _notifyIcon.Icon = _appIcon;
+                    }
+
                     string status = _bluetoothManager.IsDeviceConnected
                         ? $"{_monitoringService.CurrentRssi} dBm"
                         : "Disconnected";
@@ -170,6 +175,10 @@ namespace BluetoothSafetyLock
                 }
                 else
                 {
+                    if (_appIcon != null)
+                    {
+                        _notifyIcon.Icon = _appIcon;
+                    }
                     _notifyIcon.Text = "BluetoothSafetyLock - Paused";
                 }
             }
