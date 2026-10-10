@@ -21,6 +21,11 @@
     <ApplicationIcon>BluetoothSafetyLock.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- Exclude test files from main project compilation -->
+  <ItemGroup>
+    <Compile Remove="BluetoothSafetyLock.Tests\**" />
+  </ItemGroup>
+
   <!-- Embedded app icon for tray and window icons; copied to output for reference -->
   <ItemGroup>
     <EmbeddedResource Include="BluetoothSafetyLock.ico" />

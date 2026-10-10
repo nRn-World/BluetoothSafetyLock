@@ -217,10 +217,8 @@ namespace BluetoothSafetyLock
                 // If we just started (within 10s), never lock.
                 if ((DateTime.Now - _monitoringStartTime).TotalSeconds < MinSecondsBeforeAnyLock) return;
 
-                // If Windows says we're connected, trust it – but only if we've also
-                // seen a signal recently (within 5s). Windows can be slow to detect
-                // that a BLE device has been turned off.
-                if (_bluetoothManager.IsDeviceConnected && (DateTime.Now - LastUpdateReceived).TotalSeconds < 5.0)
+                // If Windows confirms active Bluetooth connection, trust it and refresh LastUpdateReceived.
+                if (_bluetoothManager.IsDeviceConnected)
                 {
                     LastUpdateReceived = DateTime.Now;
                     return;
@@ -276,7 +274,10 @@ namespace BluetoothSafetyLock
             Logger.Info($"StartMonitoringAsync for device {deviceId.Substring(0, Math.Min(8, deviceId.Length))}…");
 
             await _bluetoothManager.StartMonitoringAsync(deviceId);
-            MonitoredDeviceName = _bluetoothManager.MonitoredDeviceId ?? "Device";
+            if (string.IsNullOrEmpty(MonitoredDeviceName) || MonitoredDeviceName == "None")
+            {
+                MonitoredDeviceName = _bluetoothManager.MonitoredDeviceId ?? "Device";
+            }
             IsPaused = false;
             StatusChanged?.Invoke($"Monitoring started for {MonitoredDeviceName}");
         }

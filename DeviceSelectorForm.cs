@@ -70,7 +70,7 @@ namespace BluetoothSafetyLock
 
             _saveButton = new Button { Text = "Select & Start Protection", Location = new Point(20, 500), Size = new Size(365, 50), FlatStyle = FlatStyle.Flat, BackColor = Color.DodgerBlue, ForeColor = Color.White, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
             _saveButton.Click += async (s, e) => {
-                if (_deviceList.SelectedIndex >= 0)
+                if (_deviceList.SelectedIndex >= 0 && _deviceList.SelectedIndex < _devices.Count)
                 {
                     _saveButton.Enabled = false;
                     var selectedDevice = _devices[_deviceList.SelectedIndex];

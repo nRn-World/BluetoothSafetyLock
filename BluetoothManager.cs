@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Windows.Devices.Bluetooth;
@@ -47,7 +48,7 @@ namespace BluetoothSafetyLock
 
         private System.Timers.Timer? _batteryRefreshTimer;
         private System.Timers.Timer? _connectionPollTimer;
-        private readonly Dictionary<string, bool> _targetEndpointIdCache = new();
+        private readonly ConcurrentDictionary<string, bool> _targetEndpointIdCache = new();
 
         public BluetoothManager() { }
 
@@ -356,6 +357,7 @@ namespace BluetoothSafetyLock
         public async Task StartMonitoringAsync(string deviceId)
         {
             _targetDeviceId = deviceId;
+            _targetBluetoothAddress = 0;
             MonitoredBatteryLevel = null;
             IsDeviceConnected = false;
             StopMonitoring();

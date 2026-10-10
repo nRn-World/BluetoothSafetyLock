@@ -14,6 +14,8 @@ internal static class Program
     [STAThread]
     static void Main()
     {
+        Logger.Initialize();
+
         // Auto-updater: apply a staged update BEFORE the mutex and anything else.
         // If one was applied, a fresh process with the new version was started.
         if (UpdaterService.ApplyPendingInstall())
@@ -24,7 +26,20 @@ internal static class Program
         // FAS 1.3: single-instance. A second copy must never run: two watchers would
         // double-poll the same device and could lock the workstation in conflict.
         using var mutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out bool createdNew);
-        if (!createdNew)
+        bool hasHandle = createdNew;
+        if (!hasHandle)
+        {
+            try
+            {
+                hasHandle = mutex.WaitOne(TimeSpan.FromSeconds(3), false);
+            }
+            catch (AbandonedMutexException)
+            {
+                hasHandle = true;
+            }
+        }
+
+        if (!hasHandle)
         {
             Logger.Info("Second instance detected; exiting.");
             MessageBox.Show(
@@ -33,7 +48,6 @@ internal static class Program
             return;
         }
 
-        Logger.Initialize();
         Logger.Info("Application starting.");
 
         // FAS 1.1: load persisted settings before anything uses them.

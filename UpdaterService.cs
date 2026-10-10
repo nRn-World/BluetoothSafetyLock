@@ -76,7 +76,7 @@ namespace BluetoothSafetyLock
             try
             {
                 var info = FileVersionInfo.GetVersionInfo(path);
-                if (Version.TryParse(info.FileVersion, out var v)) return v;
+                if (Version.TryParse(info.FileVersion, out var v) && v != null) return NormalizeVersion(v);
             }
             catch { /* fall through */ }
             return new Version(0, 0, 0);
@@ -321,7 +321,7 @@ namespace BluetoothSafetyLock
         }
 
         /// <summary>Accepts "v1.2.3", "1.2.3" and "1.2.3-beta.1" style tags.</summary>
-        private static bool TryParseVersionTag(string tag, out Version version)
+        public static bool TryParseVersionTag(string tag, out Version version)
         {
             version = new Version(0, 0, 0);
             if (string.IsNullOrWhiteSpace(tag)) return false;
@@ -330,7 +330,19 @@ namespace BluetoothSafetyLock
             int cut = s.IndexOf('-');
             if (cut >= 0) s = s[..cut];
 
-            return Version.TryParse(s, out version!);
+            if (Version.TryParse(s, out var parsed) && parsed != null)
+            {
+                version = NormalizeVersion(parsed);
+                return true;
+            }
+            return false;
+        }
+
+        public static Version NormalizeVersion(Version v)
+        {
+            int build = v.Build < 0 ? 0 : v.Build;
+            int revision = v.Revision < 0 ? 0 : v.Revision;
+            return new Version(v.Major < 0 ? 0 : v.Major, v.Minor < 0 ? 0 : v.Minor, build, revision);
         }
     }
 }
